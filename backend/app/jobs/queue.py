@@ -2,19 +2,24 @@
 
 No debe hacer: implementar lógica de dominio (eso vive en cada módulo). Ref: ADR-05, diseño 3.1.
 """
+
 from __future__ import annotations
 
 import json
 import time
 import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 
 import redis
+
+from app.core.config import get_settings
 
 QUEUE_NAMES = (
     "imports",
     "geocoding",
     "zoning",
+    "planning",
     "routing",
     "optimization",
     "exports",
@@ -35,7 +40,9 @@ class Job:
 class JobQueue:
     """Cola simple sobre Redis Streams, con reintentos y backoff exponencial."""
 
-    def __init__(self, redis_client: redis.Redis, *, max_attempts: int = 3, base_backoff_seconds: float = 0.1) -> None:
+    def __init__(
+        self, redis_client: redis.Redis, *, max_attempts: int = 3, base_backoff_seconds: float = 0.1
+    ) -> None:
         self._redis = redis_client
         self._max_attempts = max_attempts
         self._base_backoff_seconds = base_backoff_seconds
@@ -50,7 +57,9 @@ class JobQueue:
 
     def enqueue(self, *, queue: str, payload: dict) -> Job:
         job = Job(id=str(uuid.uuid4()), queue=queue, payload=payload)
-        self._redis.rpush(self._key(queue), json.dumps({"id": job.id, "payload": payload, "attempt": 0}))
+        self._redis.rpush(
+            self._key(queue), json.dumps({"id": job.id, "payload": payload, "attempt": 0})
+        )
         self._redis.set(self._status_key(job.id), "queued")
         return job
 
@@ -64,7 +73,13 @@ class JobQueue:
         if raw is None:
             return None
         data = json.loads(raw)
-        job = Job(id=data["id"], queue=queue, payload=data["payload"], status="running", attempt=data["attempt"] + 1)
+        job = Job(
+            id=data["id"],
+            queue=queue,
+            payload=data["payload"],
+            status="running",
+            attempt=data["attempt"] + 1,
+        )
         self._redis.set(self._status_key(job.id), "running")
         try:
             handler(job.payload)
@@ -82,3 +97,10 @@ class JobQueue:
         job.status = "succeeded"
         self._redis.set(self._status_key(job.id), "succeeded")
         return job
+
+
+@lru_cache
+def get_job_queue() -> JobQueue:
+    """Instancia compartida de `JobQueue` sobre el Redis de configuración (`SOFIA_REDIS_URL`)."""
+    client = redis.Redis.from_url(get_settings().redis_url)
+    return JobQueue(client)

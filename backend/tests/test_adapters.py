@@ -34,5 +34,15 @@ async def test_fake_router_returns_square_matrix() -> None:
 
 def test_fake_optimizer_returns_identity_order() -> None:
     optimizer = FakeOptimizer()
-    result = optimizer.solve(durations_seconds=[[0, 1], [1, 0]], distances_meters=[[0, 10], [10, 0]])
+    result = optimizer.solve(
+        durations_seconds=[[0, 1], [1, 0]],
+        distances_meters=[[0, 10], [10, 0]],
+        vehicle_count=2,
+        objective="cost",
+        time_windows=[None, (0.0, 100.0)],
+    )
     assert result.order == [0, 1]
+    assert result.diagnostics == []
+    assert result.estimated_cost == 0.0
+    assert result.service_duration_seconds == 0.0
+    assert result.routes == []

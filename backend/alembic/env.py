@@ -7,7 +7,14 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.core.config import get_settings
 from app.db.base import Base
+from app.modules.geocoding import models as geocoding_models  # noqa: F401 - registra metadata
 from app.modules.identity import models as identity_models  # noqa: F401 - registra metadata
+from app.modules.imports import models as imports_models  # noqa: F401 - registra metadata
+from app.modules.jobs import models as jobs_models  # noqa: F401 - registra metadata
+from app.modules.notifications import models as notifications_models  # noqa: F401
+from app.modules.planning import models as planning_models  # noqa: F401 - registra metadata
+from app.modules.routing import models as routing_models  # noqa: F401 - registra metadata
+from app.modules.zoning import models as zoning_models  # noqa: F401 - registra metadata
 
 config = context.config
 if config.config_file_name is not None:

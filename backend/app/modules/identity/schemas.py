@@ -24,3 +24,14 @@ class MeResponse(BaseModel):
     email: str
     display_name: str
     memberships: list[MembershipOut]
+
+
+class TeamOut(BaseModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    name: str
+    active: bool
+
+
+class TeamsPage(BaseModel):
+    teams: list[TeamOut]

@@ -12,6 +12,9 @@ class GeocodeCandidate:
     display_label: str
     score: float
     place_class: str | None = None
+    postal_code: str | None = None
+    municipality: str | None = None
+    house_number: str | None = None
 
 
 class Geocoder(ABC):

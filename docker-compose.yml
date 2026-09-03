@@ -1,5 +1,29 @@
 name: sofia-dev
 
+# Entorno compartido API + workers. El worker CLI exige exactamente una cola:
+# `python -m app.jobs.worker <cola>` (imports | geocoding | zoning | planning | optimization).
+x-sofia-backend-env: &sofia-backend-env
+  SOFIA_DATABASE_URL: postgresql+psycopg://sofia:sofia_dev_password@db:5432/sofia
+  SOFIA_REDIS_URL: redis://redis:6379/0
+  SOFIA_NOMINATIM_BASE_URL: http://nominatim:8080
+  SOFIA_OSRM_BASE_URL: http://osrm:5000
+  SOFIA_FIELD_ENCRYPTION_ACTIVE_KEY_ID: k1
+  SOFIA_FIELD_ENCRYPTION_KEYS: "k1:5TfspxS+G3PUFZRoTE9p6VkQepar79YE+eHb8/la1LE="
+  # ObjectStore S3 (MinIO). Las mismas credenciales de desarrollo NO van a producción.
+  SOFIA_S3_ENDPOINT_URL: http://minio:9000
+  SOFIA_S3_ACCESS_KEY: sofia_minio
+  SOFIA_S3_SECRET_KEY: sofia_minio_dev_password
+  SOFIA_S3_BUCKET: sofia
+  SOFIA_S3_REGION: us-east-1
+
+x-sofia-backend-depends: &sofia-backend-depends
+  db:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  minio:
+    condition: service_started
+
 services:
   db:
     image: postgis/postgis:17-3.4
@@ -62,6 +86,27 @@ services:
       - "127.0.0.1:5001:5000"
     networks: [backend]
 
+  # MinIO S3-compatible para ObjectStore (1.DATA.4). Credenciales de desarrollo:
+  # NO usar en producción.
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: sofia_minio
+      MINIO_ROOT_PASSWORD: sofia_minio_dev_password
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
   # Vault en modo dev como KMS autoalojado para claves de cifrado de campo (0.DATA.4).
   # El modo dev NO es apto para producción (almacenamiento en memoria, sin sellado real).
   vault:
@@ -75,6 +120,83 @@ services:
       - "127.0.0.1:8200:8200"
     networks: [backend]
 
+  # API FastAPI. La clave de cifrado es fija y solo para desarrollo (nunca en producción,
+  # ver 0.DATA.4/VaultKeyProvider). CMD de la imagen sigue siendo uvicorn; no se cambia.
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [backend]
+
+  # Workers de cola (misma imagen que api). Sin SOFIA_S3_* caerían en InMemory y no
+  # verían los uploads de la API. Un contenedor por cola: worker.py no acepta varias.
+  worker-imports:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "imports"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  worker-geocoding:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "geocoding"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  worker-zoning:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "zoning"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  worker-planning:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "planning"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  worker-optimization:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "optimization"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  # Frontend estático (React + Vite) servido por Nginx. Ref: ADR-02, ADR-11.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api/v1
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:5173:8080"
+    networks: [backend]
+
 networks:
   backend:
 
@@ -83,3 +205,4 @@ volumes:
   nominatim_data:
   nominatim_flatnode:
   osrm_data:
+  minio_data:

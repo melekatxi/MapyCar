@@ -44,7 +44,37 @@ class NominatimGeocoder(Geocoder):
                 longitude=float(item["lon"]),
                 display_label=item.get("display_name", ""),
                 score=float(item.get("importance", 0.0)),
-                place_class=item.get("class"),
+                place_class=_place_class(item),
+                postal_code=item.get("address", {}).get("postcode"),
+                municipality=(
+                    item.get("address", {}).get("city")
+                    or item.get("address", {}).get("town")
+                    or item.get("address", {}).get("village")
+                    or item.get("address", {}).get("municipality")
+                ),
+                house_number=item.get("address", {}).get("house_number"),
             )
             for item in payload
         ]
+
+
+# jsonv2 renombró `class` → `category`. El scorer usa `type` OSM (village, hamlet…)
+# para caseríos; si el type no es útil, se cae a category/class.
+_PLACE_TYPES = {
+    "village",
+    "hamlet",
+    "isolated_dwelling",
+    "locality",
+    "neighbourhood",
+    "suburb",
+    "building",
+    "house",
+    "place",
+}
+
+
+def _place_class(item: dict) -> str | None:
+    osm_type = item.get("type")
+    if osm_type in _PLACE_TYPES:
+        return osm_type
+    return item.get("category") or item.get("class")

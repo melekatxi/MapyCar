@@ -1,0 +1,6 @@
+street,house_number,municipality,postal_code,latitude,longitude,source,source_ref,aliases
+Recalde,33,Bilbao,48009,43.263570,-2.934599,eustat-callejero-bizkaia+cartociudad,eustat:Recalde (Zumardia/Alameda) 33 48009;cartociudad:16.PV.MUN_480200147199;osm:Recalde zumarkalea 33,rekalde
+Mazarredo,15,Bilbao,48001,43.264488,-2.929373,eustat-callejero-bizkaia+cartociudad,eustat:Mazarredo (Zumardia/Alameda) 15 48001;cartociudad:16.PV.MUN_480200145654;osm:Mazarredo zumarkalea 15,
+Zumalakarregi,40,Bilbao,48006,43.257576,-2.913169,eustat-callejero-bizkaia+cartociudad,eustat:Zumalakarregi (Etorbidea/Avenida) 40 48006;cartociudad:16.PV.MUN_480200150098,
+Iparraguirre,60,Bilbao,48010,43.257681,-2.938928,eustat-callejero-bizkaia+cartociudad,eustat:Iparraguirre (Kalea/Calle) 60 48010;cartociudad:16.PV.MUN_480200143105;osm:Iparraguirre kalea 60,iparragirre
+Bengoetxe,5,Galdakao,48960,43.232828,-2.860011,eustat-callejero-bizkaia+cartociudad,eustat:Bengoetxe (Auzoa/Barrio) 5 48960;cartociudad:16.PV.MUN_480360160272,

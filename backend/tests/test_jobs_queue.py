@@ -19,6 +19,27 @@ def test_job_lifecycle_queued_running_succeeded() -> None:
     assert calls == [{"batch_id": "abc"}]
 
 
+def test_zoning_queue_is_registered() -> None:
+    client = fakeredis.FakeStrictRedis()
+    queue = JobQueue(client)
+    job = queue.enqueue(queue="zoning", payload={"proposal_id": "abc"})
+    assert queue.get_status(job.id) == "queued"
+
+
+def test_planning_queue_is_registered() -> None:
+    client = fakeredis.FakeStrictRedis()
+    queue = JobQueue(client)
+    job = queue.enqueue(queue="planning", payload={"plan_id": "abc"})
+    assert queue.get_status(job.id) == "queued"
+
+
+def test_optimization_queue_is_registered() -> None:
+    client = fakeredis.FakeStrictRedis()
+    queue = JobQueue(client)
+    job = queue.enqueue(queue="optimization", payload={"route_id": "abc"})
+    assert queue.get_status(job.id) == "queued"
+
+
 def test_job_retries_with_backoff_before_failing() -> None:
     client = fakeredis.FakeStrictRedis()
     queue = JobQueue(client, max_attempts=2, base_backoff_seconds=0.0)

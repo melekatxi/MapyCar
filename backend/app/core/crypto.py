@@ -43,22 +43,33 @@ class EnvKeyProvider(KeyProvider):
         return self._keys[key_id]
 
 
-class FieldCipher:
+class ObjectCipher:
+    """AES-256-GCM para blobs. Mismo proveedor y framing que FieldCipher, sin Base64."""
+
     def __init__(self, key_provider: KeyProvider) -> None:
         self._key_provider = key_provider
 
-    def encrypt(self, plaintext: str) -> str:
+    def encrypt(self, plaintext: bytes) -> bytes:
         key_id = self._key_provider.active_key_id()
         key = self._key_provider.get_key(key_id)
         nonce = os.urandom(_NONCE_SIZE)
-        ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode(), None)
-        payload = key_id.encode() + b":" + nonce + ciphertext
-        return base64.b64encode(payload).decode()
+        ciphertext = AESGCM(key).encrypt(nonce, plaintext, None)
+        return key_id.encode() + b":" + nonce + ciphertext
 
-    def decrypt(self, token: str) -> str:
-        raw = base64.b64decode(token.encode())
-        key_id_bytes, rest = raw.split(b":", 1)
+    def decrypt(self, payload: bytes) -> bytes:
+        key_id_bytes, rest = payload.split(b":", 1)
         key_id = key_id_bytes.decode()
         nonce, ciphertext = rest[:_NONCE_SIZE], rest[_NONCE_SIZE:]
         key = self._key_provider.get_key(key_id)
-        return AESGCM(key).decrypt(nonce, ciphertext, None).decode()
+        return AESGCM(key).decrypt(nonce, ciphertext, None)
+
+
+class FieldCipher:
+    def __init__(self, key_provider: KeyProvider) -> None:
+        self._objects = ObjectCipher(key_provider)
+
+    def encrypt(self, plaintext: str) -> str:
+        return base64.b64encode(self._objects.encrypt(plaintext.encode())).decode()
+
+    def decrypt(self, token: str) -> str:
+        return self._objects.decrypt(base64.b64decode(token.encode())).decode()

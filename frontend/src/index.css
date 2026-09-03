@@ -1,0 +1,555 @@
+:root {
+  --color-brand: #1565c0;
+  --color-bg: #f5f6f8;
+  --color-card: #ffffff;
+  --color-border: #d7dbe0;
+  --color-error: #c62828;
+  font-family: system-ui, sans-serif;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: #1c1c1c;
+}
+
+/* Autenticación */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  background: var(--color-card);
+  border-radius: 12px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.auth-subtitle {
+  margin-top: 0;
+  color: #555;
+}
+
+/* Shell responsive (1.FE.7): barra superior + navegación que colapsa en móvil */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--color-brand);
+  color: white;
+}
+
+.app-brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.app-nav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #0d47a1;
+}
+
+.app-nav__link {
+  color: white;
+  text-decoration: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+.app-nav__link--active,
+.app-nav__link:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.app-content {
+  flex: 1;
+  padding: 1rem;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 420px;
+}
+
+input,
+select,
+textarea,
+button {
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  font-size: 1rem;
+}
+
+button {
+  background: var(--color-brand);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button-secondary {
+  background: #eceff1;
+  color: #1c1c1c;
+}
+
+.form-error {
+  color: var(--color-error);
+  margin: 0;
+}
+
+.banner {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.error-chip {
+  display: inline-block;
+  background: #fdecea;
+  color: var(--color-error);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  margin: 0.1rem;
+  font-size: 0.8rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* Mapa operativo */
+.map-page__layout {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  gap: 1rem;
+}
+
+.map-container {
+  position: relative;
+}
+
+.map-container .leaflet-container {
+  height: 60vh;
+  border-radius: 10px;
+}
+
+.map-legends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0;
+}
+
+.map-legend__title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.map-legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0;
+  margin: 0;
+}
+
+.map-legend__swatch {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.detail-panel {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem;
+  height: fit-content;
+}
+
+.detail-panel dt {
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.detail-panel dd {
+  margin: 0;
+}
+
+/* Bandeja de geocodificación */
+.geocoding-tray__layout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 1rem;
+}
+
+.patient-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.patient-list button {
+  width: 100%;
+  text-align: left;
+  background: var(--color-card);
+  color: #1c1c1c;
+  border: 1px solid var(--color-border);
+}
+
+.candidate-list {
+  list-style: none;
+  padding: 0;
+}
+
+.candidate-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Breakpoint móvil/tablet (RNF-08): navegación colapsable y layout de una columna */
+@media (max-width: 768px) {
+  .nav-toggle {
+    display: inline-block;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+  }
+
+  .app-nav {
+    flex-direction: column;
+    display: none;
+  }
+
+  .app-nav--open {
+    display: flex;
+  }
+
+  .map-page__layout,
+  .geocoding-tray__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Editor de zonas (2.FE.1 / RF-09-11) */
+.zone-editor h2,
+.zone-editor h3 {
+  margin-top: 0;
+}
+
+.zone-editor .form {
+  max-width: 520px;
+}
+
+.zone-cards {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.zone-card {
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: var(--color-card);
+  min-height: 8rem;
+}
+
+.zone-card--over {
+  border-color: var(--color-brand);
+  background: #e3f2fd;
+}
+
+.zone-card--full {
+  border-color: #ef6c00;
+}
+
+.zone-card__patients {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.zone-card__patients li {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-bottom: 0.35rem;
+  cursor: grab;
+  background: #fafafa;
+}
+
+.zone-editor__check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.zone-editor__hint {
+  color: #555;
+  margin-top: 0;
+}
+
+.zone-editor__reassign {
+  margin-top: 1rem;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+}
+
+.dialog {
+  background: var(--color-card);
+  border-radius: 10px;
+  padding: 1.25rem;
+  width: min(28rem, 92vw);
+}
+
+/* 2.FE.3 zone-kind */
+.zone-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.zone-kind__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+}
+
+.zone-kind--urban {
+  color: #1565c0;
+}
+
+.zone-kind--rural {
+  color: #2e7d32;
+}
+
+.zone-kind--mixed {
+  color: #6a1b9a;
+}
+
+.zone-card__patients li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.zone-card__patients .zone-kind {
+  font-size: 0.75rem;
+}
+
+/* Calendario de planificación (2.FE.2 / RF-13-15) */
+.plan-calendar h2,
+.plan-calendar h3 {
+  margin-top: 0;
+}
+
+.plan-calendar .form {
+  max-width: 520px;
+}
+
+.plan-calendar__hint {
+  color: #555;
+  margin: 0;
+}
+
+.plan-calendar__meta,
+.plan-calendar__assignee {
+  margin: 0 0 0.5rem;
+}
+
+.plan-calendar__plans {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.plan-calendar__plans li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.plan-calendar__conflicts {
+  background: #fdecea;
+  border: 1px solid #f5c6c2;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.plan-calendar__conflicts ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.plan-calendar__month {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.plan-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+  min-width: 42rem;
+}
+
+.plan-calendar__weekday {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.plan-calendar__day {
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: var(--color-card);
+  min-height: 7.5rem;
+}
+
+.plan-calendar__day--muted {
+  opacity: 0.45;
+  min-height: 2.5rem;
+}
+
+.plan-calendar__day--over {
+  border-color: var(--color-brand);
+  background: #e3f2fd;
+}
+
+.plan-calendar__day--full {
+  border-color: #ef6c00;
+}
+
+.plan-calendar__date {
+  font-weight: 700;
+  margin: 0;
+}
+
+.plan-calendar__capacity {
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+}
+
+.plan-calendar__chips {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+}
+
+.plan-calendar__chip {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-bottom: 0.35rem;
+  cursor: grab;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.plan-calendar__chip-zone {
+  font-size: 0.75rem;
+  color: #555;
+}
+
+.plan-calendar__form {
+  margin-top: 1rem;
+}

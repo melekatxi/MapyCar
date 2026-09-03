@@ -2,15 +2,15 @@ id_paciente;nombre_referencia;direccion;codigo_postal;municipio;provincia;tipo_z
 PAC-001;Paciente 001;Calle Ledesma 12, 3º Izq;48001;Bilbao;Bizkaia;Urbana
 PAC-002;Paciente 002;Gran Vía Don Diego López de Haro 45, 1º;48011;Bilbao;Bizkaia;Urbana
 PAC-003;Paciente 003;Calle Autonomía 8, 2º Dcha;48012;Bilbao;Bizkaia;Urbana
-PAC-004;Paciente 004;Calle Zabalbide 90, Bajo;48006;Bilbao;Bizkaia;Urbana
-PAC-005;Paciente 005;Calle Iturribide 55, 4º;48005;Bilbao;Bizkaia;Urbana
+PAC-004;Paciente 004;Calle Zabalbide 92, Bajo;48006;Bilbao;Bizkaia;Urbana
+PAC-005;Paciente 005;Calle Iturribide 54, 4º;48006;Bilbao;Bizkaia;Urbana
 PAC-006;Paciente 006;Avenida Sabino Arana 20, 3º;48013;Bilbao;Bizkaia;Urbana
 PAC-007;Paciente 007;Calle Rekalde 33, 2º Izq;48009;Bilbao;Bizkaia;Urbana
 PAC-008;Paciente 008;Calle Mazarredo 15, Ático;48009;Bilbao;Bizkaia;Urbana
 PAC-009;Paciente 009;Calle Máximo Aguirre 10, 5º;48011;Bilbao;Bizkaia;Urbana
-PAC-010;Paciente 010;Calle Kirikiño 3, Bajo;48004;Bilbao;Bizkaia;Urbana
+PAC-010;Paciente 010;Avenida Kirikiño 2, Bajo;48012;Bilbao;Bizkaia;Urbana
 PAC-011;Paciente 011;Avenida de Zumalakarregi 40, 2º;48007;Bilbao;Bizkaia;Urbana
-PAC-012;Paciente 012;Calle Colón de Larreategui 22, 3º;48001;Bilbao;Bizkaia;Urbana
+PAC-012;Paciente 012;Calle Colón de Larreategui 22, 3º;48009;Bilbao;Bizkaia;Urbana
 PAC-013;Paciente 013;Calle Iparragirre 60, 4º Dcha;48010;Bilbao;Bizkaia;Urbana
 PAC-014;Paciente 014;Calle Elcano 18, 1º;48008;Bilbao;Bizkaia;Urbana
 PAC-015;Paciente 015;Calle Uribitarte 6, 2º;48001;Bilbao;Bizkaia;Urbana
@@ -32,33 +32,33 @@ PAC-030;Paciente 030;Barrio San Vicente 22;48950;Erandio;Bizkaia;Urbana
 PAC-031;Paciente 031;Calle Nagusia 3;48940;Leioa;Bizkaia;Urbana
 PAC-032;Paciente 032;Avenida Iberdrola 12, 1º;48940;Leioa;Bizkaia;Urbana
 PAC-033;Paciente 033;Calle Larrauri 5;48160;Derio;Bizkaia;Urbana
-PAC-034;Paciente 034;Barrio Lezama-Zamudio 8;48170;Zamudio;Bizkaia;Rural
+PAC-034;Paciente 034;Galbarriatu;48160;Zamudio;Bizkaia;Rural
 PAC-035;Paciente 035;Barrio San Antonio 14;48180;Loiu;Bizkaia;Urbana
 PAC-036;Paciente 036;Calle Kurtzeta 9;48960;Galdakao;Bizkaia;Urbana
-PAC-037;Paciente 037;Barrio Bengoetxe 4;48960;Galdakao;Bizkaia;Rural
+PAC-037;Paciente 037;Barrio Bengoetxe 5;48960;Galdakao;Bizkaia;Rural
 PAC-038;Paciente 038;Calle Kareaga Goikoa 20;48970;Basauri;Bizkaia;Urbana
 PAC-039;Paciente 039;Calle Nagusia 33;48970;Basauri;Bizkaia;Urbana
 PAC-040;Paciente 040;Barrio Ariz 2;48970;Basauri;Bizkaia;Urbana
 PAC-041;Paciente 041;Calle Sabino Arana 5;48200;Durango;Bizkaia;Urbana
 PAC-042;Paciente 042;Barrio Tabira 15;48200;Durango;Bizkaia;Urbana
-PAC-043;Paciente 043;Barrio Mañaria Auzoa 3;48220;Mañaria;Bizkaia;Rural
-PAC-044;Paciente 044;Barrio Elorrio Auzoa 9;48230;Elorrio;Bizkaia;Rural
-PAC-045;Paciente 045;Calle Foru Kalea 4;48240;Berriz;Bizkaia;Rural
-PAC-046;Paciente 046;Barrio Zaldua 6;48250;Zaldibar;Bizkaia;Rural
-PAC-047;Paciente 047;Barrio Iurreta Auzoa 11;48260;Iurreta;Bizkaia;Rural
-PAC-048;Paciente 048;Barrio Abadiño Auzoa 7;48220;Abadiño;Bizkaia;Rural
+PAC-043;Paciente 043;Aldebaraieta;48212;Mañaria;Bizkaia;Rural
+PAC-044;Paciente 044;Berrio;48230;Elorrio;Bizkaia;Rural
+PAC-045;Paciente 045;Besoita;48240;Berriz;Bizkaia;Rural
+PAC-046;Paciente 046;Sallabente;48260;Zaldibar;Bizkaia;Rural
+PAC-047;Paciente 047;Santa Apolonia;48215;Iurreta;Bizkaia;Rural
+PAC-048;Paciente 048;Irazola Auzoa;48291;Abadiño;Bizkaia;Rural
 PAC-049;Paciente 049;Calle Foru Plaza 2;48300;Gernika-Lumo;Bizkaia;Urbana
 PAC-050;Paciente 050;Barrio Allende Salazar 8;48300;Gernika-Lumo;Bizkaia;Urbana
 PAC-051;Paciente 051;Barrio Errigoiti Auzoa 3;48311;Errigoiti;Bizkaia;Rural
-PAC-052;Paciente 052;Barrio Muxika Auzoa 5;48392;Muxika;Bizkaia;Rural
-PAC-053;Paciente 053;Barrio Arratzu Auzoa 2;48320;Arratzu;Bizkaia;Rural
-PAC-054;Paciente 054;Barrio Ereño Auzoa 4;48313;Ereño;Bizkaia;Rural
-PAC-055;Paciente 055;Barrio Ibarrangelu Auzoa 1;48314;Ibarrangelu;Bizkaia;Rural
+PAC-052;Paciente 052;Luparia;48392;Muxika;Bizkaia;Rural
+PAC-053;Paciente 053;Zubiate;48383;Arratzu;Bizkaia;Rural
+PAC-054;Paciente 054;Gabika;48313;Ereño;Bizkaia;Rural
+PAC-055;Paciente 055;Allika;48311;Ibarrangelu;Bizkaia;Rural
 PAC-056;Paciente 056;Calle Kepa Deuna 10;48370;Bermeo;Bizkaia;Urbana
 PAC-057;Paciente 057;Calle Talaia 6;48370;Bermeo;Bizkaia;Urbana
 PAC-058;Paciente 058;Barrio Kortezubi Auzoa 3;48315;Kortezubi;Bizkaia;Rural
 PAC-059;Paciente 059;Calle Artekale 8;48360;Mundaka;Bizkaia;Urbana
-PAC-060;Paciente 060;Barrio Sukarrieta Auzoa 2;48365;Sukarrieta;Bizkaia;Rural
+PAC-060;Paciente 060;Abaroa;48395;Sukarrieta;Bizkaia;Rural
 PAC-061;Paciente 061;Calle Andra Mari 4;48380;Aulesti;Bizkaia;Rural
 PAC-062;Paciente 062;Barrio Munitibar Auzoa 6;48381;Munitibar;Bizkaia;Rural
 PAC-063;Paciente 063;Calle Abesua 3;48270;Markina-Xemein;Bizkaia;Urbana

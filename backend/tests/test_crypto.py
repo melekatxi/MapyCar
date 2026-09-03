@@ -1,7 +1,7 @@
 import base64
 import os
 
-from app.core.crypto import EnvKeyProvider, FieldCipher, KeyProvider
+from app.core.crypto import EnvKeyProvider, FieldCipher, KeyProvider, ObjectCipher
 
 
 class _StaticKeyProvider(KeyProvider):
@@ -37,6 +37,32 @@ def test_rotating_active_key_does_not_break_previous_ciphertexts() -> None:
 
     assert cipher.decrypt(old_token) == "dirección antigua"
     assert cipher.decrypt(new_token) == "dirección nueva"
+
+
+def test_object_cipher_roundtrip_and_framing_matches_field_cipher() -> None:
+    provider = _StaticKeyProvider("k1", {"k1": os.urandom(32)})
+    objects = ObjectCipher(provider)
+    fields = FieldCipher(provider)
+    plaintext = b"Calle Mayor 1, Bilbao"
+
+    token = objects.encrypt(plaintext)
+
+    assert objects.decrypt(token) == plaintext
+    assert b"Calle Mayor" not in token
+    assert fields.decrypt(base64.b64encode(token).decode()) == plaintext.decode()
+
+
+def test_object_cipher_rotation_does_not_break_previous_payloads() -> None:
+    keys = {"k1": os.urandom(32), "k2": os.urandom(32)}
+    provider = _StaticKeyProvider("k1", keys)
+    cipher = ObjectCipher(provider)
+    old = cipher.encrypt(b"csv antiguo")
+
+    provider._active = "k2"
+    new = cipher.encrypt(b"csv nuevo")
+
+    assert cipher.decrypt(old) == b"csv antiguo"
+    assert cipher.decrypt(new) == b"csv nuevo"
 
 
 def test_env_key_provider_reads_keys_from_settings(monkeypatch) -> None:

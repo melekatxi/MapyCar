@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.security import verify_password
-from app.modules.identity.models import User, UserMembership
+from app.modules.identity.models import Team, User, UserMembership
 
 
 def set_current_user_context(db: Session, *, user_id: uuid.UUID) -> None:
@@ -42,4 +42,15 @@ def is_member_of_organization(db: Session, *, user_id: uuid.UUID, organization_i
         )
         .one_or_none()
         is not None
+    )
+
+
+def list_teams(db: Session, *, organization_id: uuid.UUID) -> list[Team]:
+    """Equipos de la organización. RLS exige el contexto de tenant antes de leer."""
+    set_current_organization_context(db, organization_id=organization_id)
+    return (
+        db.query(Team)
+        .filter(Team.organization_id == organization_id)
+        .order_by(Team.name)
+        .all()
     )

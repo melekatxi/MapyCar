@@ -32,6 +32,33 @@ async def test_nominatim_geocoder_parses_candidates() -> None:
 
 
 @respx.mock
+async def test_nominatim_geocoder_maps_jsonv2_category_and_type() -> None:
+    respx.get("http://nominatim.test/search").mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "lat": "43.2820604",
+                    "lon": "-2.8979386",
+                    "display_name": "Galbarriatu, Zamudio, Bizkaia, 48160, España",
+                    "importance": 0.4,
+                    "category": "place",
+                    "type": "village",
+                    "address": {"postcode": "48160", "village": "Zamudio"},
+                }
+            ],
+        )
+    )
+    geocoder = NominatimGeocoder("http://nominatim.test")
+
+    candidates = await geocoder.geocode(
+        address_text="Galbarriatu", postal_code="48160", municipality="Zamudio"
+    )
+
+    assert candidates[0].place_class == "village"
+
+
+@respx.mock
 async def test_osrm_router_table_returns_matrix() -> None:
     respx.get(url__startswith="http://osrm.test/table/v1/driving/").mock(
         return_value=Response(200, json={"durations": [[0, 60], [60, 0]], "distances": [[0, 500], [500, 0]]})

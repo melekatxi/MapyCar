@@ -20,6 +20,10 @@ dependencies = [
     "email-validator>=2.2",
     "hvac>=2.3",
     "openpyxl>=3.1",
+    "xlrd>=2.0.1,<3",
+    "boto3>=1.35,<2",
+    "scikit-learn>=1.7.2",
+    "ortools>=9.15,<10",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +34,7 @@ dev = [
     "ruff>=0.6",
     "fakeredis>=2.24",
     "testcontainers[postgres,redis]>=4.8",
+    "moto[s3]>=5.0,<6",
 ]
 
 [build-system]
@@ -38,6 +43,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.modules.geocoding" = ["data/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

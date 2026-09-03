@@ -58,7 +58,11 @@ class UserMembership(Base):
 
 class Team(Base):
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_team_org_name"),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_team_org_name"),
+        # UNIQUE (id, organization_id) habilita FK compuesta tenant-safe desde monthly_plans.
+        UniqueConstraint("id", "organization_id", name="uq_teams_id_org"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     organization_id: Mapped[uuid.UUID] = mapped_column(

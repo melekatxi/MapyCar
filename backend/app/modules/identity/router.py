@@ -11,7 +11,14 @@ from app.db.session import get_db
 from app.modules.identity import service
 from app.modules.identity.deps import get_current_user, require_organization_member
 from app.modules.identity.models import User
-from app.modules.identity.schemas import LoginRequest, LoginResponse, MembershipOut, MeResponse
+from app.modules.identity.schemas import (
+    LoginRequest,
+    LoginResponse,
+    MembershipOut,
+    MeResponse,
+    TeamOut,
+    TeamsPage,
+)
 
 router = APIRouter(tags=["identity"])
 
@@ -40,3 +47,23 @@ def ping_organization(
     organization_id: uuid.UUID, current_user: User = Depends(require_organization_member)
 ) -> dict[str, str]:
     return {"status": "ok", "organization_id": str(organization_id)}
+
+
+@router.get("/teams", response_model=TeamsPage)
+def list_teams(
+    organization_id: uuid.UUID,
+    current_user: User = Depends(require_organization_member),
+    db: Session = Depends(get_db),
+) -> TeamsPage:
+    teams = service.list_teams(db, organization_id=organization_id)
+    return TeamsPage(
+        teams=[
+            TeamOut(
+                id=team.id,
+                organization_id=team.organization_id,
+                name=team.name,
+                active=team.active,
+            )
+            for team in teams
+        ]
+    )

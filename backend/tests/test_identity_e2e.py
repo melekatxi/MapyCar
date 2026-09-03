@@ -12,7 +12,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.modules.identity import service
-from app.modules.identity.models import Organization, User, UserMembership
+from app.modules.identity.models import Organization, Team, User, UserMembership
 
 
 @pytest.fixture()
@@ -78,7 +78,51 @@ def test_user_cannot_access_other_organization(client: TestClient, db_session: S
         f"/api/v1/organizations/{other_org.id}/ping", headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 403
-    assert response.json()["code"] == "FORBIDDEN_ORGANIZATION"
+
+
+def test_list_teams_is_scoped_to_organization(client: TestClient, db_session: Session) -> None:
+    own_org = Organization(name="Org equipos propia")
+    other_org = Organization(name="Org equipos ajena")
+    db_session.add_all([own_org, other_org])
+    db_session.commit()
+    user = _create_user_with_membership(db_session, organization=own_org)
+
+    own_org_id, other_org_id = own_org.id, other_org.id
+    service.set_current_organization_context(db_session, organization_id=own_org_id)
+    own_team = Team(organization_id=own_org_id, name="Equipo Bilbao")
+    db_session.add(own_team)
+    db_session.commit()
+    own_team_id = own_team.id
+    service.set_current_organization_context(db_session, organization_id=other_org_id)
+    db_session.add(Team(organization_id=other_org_id, name="Equipo ajeno"))
+    db_session.commit()
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": user.email_normalized, "password": "Sup3rSecreta!"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    listed = client.get(
+        "/api/v1/teams",
+        params={"organization_id": str(own_org_id)},
+        headers=headers,
+    )
+    assert listed.status_code == 200
+    teams = listed.json()["teams"]
+    assert [item["name"] for item in teams] == ["Equipo Bilbao"]
+    assert teams[0]["id"] == str(own_team_id)
+    assert teams[0]["organization_id"] == str(own_org_id)
+    assert teams[0]["active"] is True
+
+    forbidden = client.get(
+        "/api/v1/teams",
+        params={"organization_id": str(other_org_id)},
+        headers=headers,
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json()["code"] == "FORBIDDEN_ORGANIZATION"
 
 
 def test_login_rejects_wrong_password(client: TestClient, db_session: Session) -> None:
