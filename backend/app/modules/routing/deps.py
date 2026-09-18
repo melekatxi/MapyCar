@@ -16,9 +16,11 @@ from app.modules.identity import service as identity_service
 from app.modules.identity.deps import get_current_user
 from app.modules.identity.models import User, UserMembership
 from app.modules.planning.models import DailyRoute
+from app.modules.sharing.service import has_active_share
 
 # Misma política que plan creators (planning.deps.PLAN_CREATOR_ROLES).
 ROUTE_EDITOR_ROLES = ("admin", "planner")
+ROUTE_FIELD_ROLE = "field"
 
 
 @lru_cache
@@ -69,8 +71,38 @@ def get_route_for_editor(
     return route
 
 
+def get_route_for_execution(
+    route: DailyRoute = Depends(get_route_for_member),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DailyRoute:
+    """Planner/admin en la org, o field asignado a la ruta (RF-25)."""
+    membership = _membership(db, user_id=current_user.id, organization_id=route.organization_id)
+    if membership.role in ROUTE_EDITOR_ROLES:
+        return route
+    if membership.role == ROUTE_FIELD_ROLE and route.assignee_id == current_user.id:
+        return route
+    raise DomainError(403, "FORBIDDEN_ROLE", "Rol sin permiso para reportar ejecución")
+
+
+def get_route_for_viewer(
+    route: DailyRoute = Depends(get_route_for_member),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DailyRoute:
+    """Lectura: editor, field asignado, o grant interno activo (4.BE.6)."""
+    membership = _membership(db, user_id=current_user.id, organization_id=route.organization_id)
+    if membership.role in ROUTE_EDITOR_ROLES:
+        return route
+    if membership.role == ROUTE_FIELD_ROLE and route.assignee_id == current_user.id:
+        return route
+    if has_active_share(db, route_id=route.id, user_id=current_user.id):
+        return route
+    raise DomainError(403, "FORBIDDEN_ROLE", "Rol sin permiso para ver esta ruta")
+
+
 def parse_if_match(if_match: str | None) -> int:
-    """ETag de ruta: entero o comillas RFC (`1`, `"1"`). Token = daily_routes.version."""
+    """ETag: entero o comillas RFC (`1`, `"1"`). Token = columna version del recurso."""
     if if_match is None or not if_match.strip():
         raise DomainError(422, "IF_MATCH_REQUIRED", "Falta la cabecera If-Match")
     raw = if_match.strip()

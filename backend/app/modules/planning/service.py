@@ -26,8 +26,13 @@ from app.core.errors import DomainError
 from app.modules.identity import service as identity_service
 from app.modules.identity.models import Team, UserMembership
 from app.modules.imports.models import Address, Patient
-from app.modules.notifications.models import EVENT_PLAN_PUBLISHED, RESOURCE_MONTHLY_PLAN
-from app.modules.notifications.service import record_event
+from app.modules.notifications.models import (
+    EVENT_PLAN_PUBLISHED,
+    EVENT_ROUTE_REASSIGNED,
+    RESOURCE_DAILY_ROUTE,
+    RESOURCE_MONTHLY_PLAN,
+)
+from app.modules.notifications.service import record_event, schedule_outbox
 from app.modules.planning.assignment import (
     AssignmentConflict,
     ConflictCode,
@@ -360,6 +365,7 @@ def publish_plan(
         db.rollback()
         identity_service.set_current_organization_context(db, organization_id=plan.organization_id)
         raise DomainError(409, "PLAN_PUBLISH_CONFLICT", "No se pudo publicar el plan") from exc
+    schedule_outbox(event)
     db.refresh(locked)
     return PlanPublishResponse(
         id=locked.id,
@@ -421,9 +427,22 @@ def assign_route(
     if _org_membership(db, user_id=assignee_id, organization_id=plan.organization_id) is None:
         raise DomainError(404, "ASSIGNEE_NOT_FOUND", "Visitador no encontrado")
 
+    previous_assignee_id = route.assignee_id
     route.assignee_id = assignee_id
     route.version = expected_version + 1
     try:
+        event = record_event(
+            db,
+            organization_id=plan.organization_id,
+            event_type=EVENT_ROUTE_REASSIGNED,
+            resource_type=RESOURCE_DAILY_ROUTE,
+            resource_id=route.id,
+            payload={
+                "route_id": str(route.id),
+                "previous_assignee_id": str(previous_assignee_id),
+                "assignee_id": str(assignee_id),
+            },
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -435,6 +454,7 @@ def assign_route(
                 "Ese visitador ya tiene una ruta en esa zona y fecha",
             ) from exc
         raise DomainError(409, "ROUTE_ASSIGNEE_INVALID", "No se pudo asignar el visitador") from exc
+    schedule_outbox(event)
     db.refresh(route)
     return _route_to_out(route)
 

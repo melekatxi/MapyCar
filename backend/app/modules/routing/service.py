@@ -1,11 +1,15 @@
-"""Servicio de rutas diarias: optimización, reordenación y comparativa.
+"""Servicio de rutas diarias: optimización, paradas, comparativa, publish y ejecución.
 
-Ref: RF-16, RF-18, RF-19, RF-20, 3.BE.7, 3.BE.8, 3.BE.10, 3.BE.12.
+Ref: RF-16, RF-18–21, RF-25, 3.BE.7–12, 4.BE.2.
 
-If-Match usa `daily_routes.version` (route_revisions no tiene columna version).
-Tras reordenar, route_metrics.calculation_json.stale = true (pendiente de recálculo).
+If-Match de planificación usa `daily_routes.version` (route_revisions no tiene columna version).
+PATCH de ejecución usa `route_stops.version`. No muta snapshot ni orden publicados.
+Tras reordenar o sustituir paradas, route_metrics.calculation_json.stale = true.
 GET /comparison lee original vs optimized de current_revision y 409 si faltan o están stale.
-POST /optimize es idempotente (ledger `route.optimize`); el worker crea la revisión draft.
+Si hay `variant=actual` (4.BE.3) incluye desviación vs el plan optimizado (sin GPS).
+POST /optimize es idempotente (ledger `route.optimize`); el hash incluye el conjunto de paradas
+(diseño 11.1: un cambio de parada exige nueva Idempotency-Key).
+POST /publish es 200 en una transacción (ledger `route.publish`); congela la revisión.
 """
 
 from __future__ import annotations
@@ -13,14 +17,17 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from itertools import pairwise
 from typing import Any
 
+from cryptography.exceptions import InvalidTag
 from geoalchemy2 import Geometry
 from sqlalchemy import cast, func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.adapters.optimizer.interface import (
     INCOMPATIBLE_WINDOWS,
@@ -32,40 +39,55 @@ from app.adapters.optimizer.interface import (
 )
 from app.adapters.optimizer.ortools_tsp import OrToolsTspOptimizer, estimated_arc_cost
 from app.adapters.router.interface import Coordinate, Router
+from app.core.config import get_settings
 from app.core.crypto import FieldCipher
 from app.core.errors import DomainError
 from app.jobs.queue import JobQueue
 from app.modules.identity import service as identity_service
 from app.modules.identity.models import Organization
 from app.modules.imports.models import Address, Patient
-from app.modules.jobs.ledger import begin_idempotent_job
+from app.modules.jobs.ledger import begin_idempotent_job, hash_request_payload
 from app.modules.jobs.models import Job
 from app.modules.planning.calendar import DEFAULT_SERVICE_MINUTES
 from app.modules.planning.models import DailyRoute, MonthlyPlan
 from app.modules.routing.matrix import (
+    COORD_DECIMALS,
     ComputedMatrix,
     OsrmTableCache,
     assemble_table_coordinates,
     compute_matrix,
 )
-from app.modules.routing.metrics import build_metrics, persist_metrics
+from app.modules.routing.metrics import build_metrics, persist_metrics, upsert_actual_metric
 from app.modules.routing.models import RouteMetric, RouteRevision, RouteStop
 from app.modules.routing.schemas import (
     OptimizeRouteRequest,
     OptimizeRouteResponse,
+    PublishRouteRequest,
+    PublishRouteResponse,
     ReorderStopsResponse,
+    ReplaceStopsResponse,
+    ReportStopExecutionRequest,
     RouteComparisonResponse,
     RouteDetailResponse,
     RouteDiagnosticOut,
+    RouteExecutionCountsOut,
     RouteMetricsSavingsOut,
     RouteMetricsVariantOut,
+    RouteStopExecutionOut,
     RouteStopOrderOut,
     RouteStopOut,
+    RouteStopRefOut,
 )
 
 OPTIMIZE_JOB_TYPE = "route.optimize"
 OPTIMIZE_RESOURCE_TYPE = "route"
 OPTIMIZE_QUEUE = "optimization"
+PUBLISH_JOB_TYPE = "route.publish"
+_PUBLISHABLE_ROUTE_STATUSES = frozenset({"draft", "optimizing", "ready"})
+_UNPUBLISHABLE_ROUTE_STATUSES = frozenset({"in_progress", "completed", "cancelled"})
+_EXECUTABLE_ROUTE_STATUSES = frozenset({"published", "in_progress"})
+_MAX_ROUTE_STOPS = 25
+_INACTIVE_ROUTE_STATUSES = frozenset({"cancelled", "completed"})
 CONFIRMED_GEOCODE_STATUSES = frozenset({"matched", "manual"})
 _FEASIBLE_SOLVER_STATUSES = frozenset(
     {
@@ -126,9 +148,15 @@ def enqueue_optimize(
 ) -> OptimizeRouteResponse:
     """Crea o reutiliza el job durable y encola el worker `optimization`."""
     identity_service.set_current_organization_context(db, organization_id=route.organization_id)
+    try:
+        stops = _load_stop_inputs(db, route)
+    except OptimizeJobError as exc:
+        raise DomainError(409, exc.code, str(exc)) from exc
     ledger_payload = {
         "route_id": str(route.id),
         **payload.model_dump(mode="json"),
+        "stops_fingerprint": _stops_fingerprint(stops),
+        "osrm_dataset_version": get_settings().osrm_dataset_version,
     }
     job = begin_idempotent_job(
         db,
@@ -182,6 +210,7 @@ def optimize_route_job(
     job = _lock_job(db, job_id, organization_id=organization_id)
     if job is not None:
         job.status = "running"
+        job.progress = max(job.progress, 10)
         job.attempt = job.attempt + 1
 
     try:
@@ -222,6 +251,8 @@ def get_route_detail(db: Session, route: DailyRoute) -> RouteDetailResponse:
     identity_service.set_current_organization_context(db, organization_id=route.organization_id)
     revision, stops = _current_revision_with_stops(db, route)
     diagnostics = _diagnostics_from_constraints(revision.constraints_json if revision else {})
+    coords = _stop_coordinates(db, stops)
+    refs = _stop_external_refs(db, route.organization_id, revision, stops)
     return RouteDetailResponse(
         id=route.id,
         plan_id=route.plan_id,
@@ -237,7 +268,24 @@ def get_route_detail(db: Session, route: DailyRoute) -> RouteDetailResponse:
         solver_status=revision.solver_status if revision is not None else None,
         diagnostics=diagnostics,
         stops=[
-            RouteStopOut(id=stop.id, patient_id=stop.patient_id, sequence=stop.sequence)
+            RouteStopOut(
+                id=stop.id,
+                patient_id=stop.patient_id,
+                sequence=stop.sequence,
+                status=stop.status,
+                version=stop.version,
+                completed_at=stop.completed_at,
+                failure_reason=stop.failure_reason,
+                window_start=stop.window_start.isoformat(timespec="minutes")
+                if stop.window_start is not None
+                else None,
+                window_end=stop.window_end.isoformat(timespec="minutes")
+                if stop.window_end is not None
+                else None,
+                lat=coords.get(stop.id, (None, None))[0],
+                lon=coords.get(stop.id, (None, None))[1],
+                external_ref=refs.get(stop.patient_id),
+            )
             for stop in stops
         ],
     )
@@ -335,6 +383,105 @@ def reorder_stops(
     )
 
 
+def replace_stops(
+    db: Session,
+    route: DailyRoute,
+    *,
+    patient_ids: list[uuid.UUID],
+    expected_version: int,
+    created_by: uuid.UUID,
+) -> ReplaceStopsResponse:
+    """Sustituye paradas de la revisión draft (añadir/quitar/refrescar direcciones).
+
+    Una revisión published no se muta: se abre una draft nueva (3.BE.11).
+    """
+    identity_service.set_current_organization_context(db, organization_id=route.organization_id)
+    if len(patient_ids) > _MAX_ROUTE_STOPS:
+        raise DomainError(422, "ROUTE_TOO_MANY_STOPS", "La ruta admite como máximo 25 paradas")
+    if len(patient_ids) != len(set(patient_ids)):
+        raise DomainError(422, "DUPLICATE_STOP_PATIENT", "patient_ids no puede repetir pacientes")
+
+    locked = (
+        db.query(DailyRoute)
+        .filter(DailyRoute.id == route.id, DailyRoute.organization_id == route.organization_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if locked is None:
+        raise DomainError(404, "ROUTE_NOT_FOUND", "Ruta no encontrada")
+    if locked.version != expected_version:
+        raise DomainError(409, "ROUTE_VERSION_CONFLICT", "La ruta ha sido modificada")
+    if locked.status in _UNPUBLISHABLE_ROUTE_STATUSES:
+        raise DomainError(409, "ROUTE_NOT_EDITABLE", "La ruta no admite cambio de paradas")
+
+    _assert_patients_in_organization(db, locked.organization_id, patient_ids)
+    _assert_patients_not_on_other_routes(db, locked, patient_ids)
+    resolved = _confirmed_stop_locations(db, locked.organization_id, patient_ids)
+
+    current = None
+    if locked.current_revision is not None:
+        current = (
+            db.query(RouteRevision)
+            .filter(
+                RouteRevision.id == locked.current_revision,
+                RouteRevision.organization_id == locked.organization_id,
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+        if current is None:
+            raise DomainError(404, "REVISION_NOT_FOUND", "Revisión no encontrada")
+
+    previous_minutes = _service_minutes_by_patient(db, current) if current is not None else {}
+    if current is None or current.status == "published":
+        revision = _open_draft_revision(db, locked, previous=current, created_by=created_by)
+        locked.current_revision = revision.id
+        if locked.status == "published":
+            locked.status = "draft"
+    else:
+        if current.status != "draft":
+            raise DomainError(409, "REVISION_NOT_DRAFT", "Solo se editan revisiones en borrador")
+        revision = current
+        _clear_revision_stops(db, revision)
+    stops: list[RouteStop] = []
+    for index, patient_id in enumerate(patient_ids, start=1):
+        _, lat, lon = resolved[patient_id]
+        stops.append(
+            RouteStop(
+                revision_id=revision.id,
+                organization_id=locked.organization_id,
+                patient_id=patient_id,
+                location=_point_ewkt(lon, lat),
+                sequence=index,
+                service_minutes=previous_minutes.get(patient_id, DEFAULT_SERVICE_MINUTES),
+            )
+        )
+    db.add_all(stops)
+    _mark_metrics_stale(db, revision)
+    revision.solver_status = "pending"
+    locked.version = expected_version + 1
+    db.commit()
+    db.refresh(locked)
+    for stop in stops:
+        db.refresh(stop)
+
+    return ReplaceStopsResponse(
+        route_id=locked.id,
+        revision_id=revision.id,
+        version=locked.version,
+        stops=[
+            RouteStopOrderOut(
+                id=stop.id,
+                patient_id=stop.patient_id,
+                sequence=stop.sequence,
+                version=stop.version,
+            )
+            for stop in stops
+        ],
+        metrics_pending=True,
+    )
+
+
 def get_comparison(db: Session, route: DailyRoute) -> RouteComparisonResponse:
     identity_service.set_current_organization_context(db, organization_id=route.organization_id)
     if route.current_revision is None:
@@ -349,13 +496,14 @@ def get_comparison(db: Session, route: DailyRoute) -> RouteComparisonResponse:
         .filter(
             RouteMetric.revision_id == route.current_revision,
             RouteMetric.organization_id == route.organization_id,
-            RouteMetric.variant.in_(("original", "optimized")),
+            RouteMetric.variant.in_(("original", "optimized", "actual")),
         )
         .all()
     )
     by_variant = {metric.variant: metric for metric in metrics}
     original = by_variant.get("original")
     optimized = by_variant.get("optimized")
+    actual = by_variant.get("actual")
     if original is None or optimized is None:
         raise DomainError(
             409,
@@ -377,6 +525,8 @@ def get_comparison(db: Session, route: DailyRoute) -> RouteComparisonResponse:
     else:
         travel_pct = round(saved_travel / original.travel_seconds * 100, 2)
     revision = db.get(RouteRevision, route.current_revision)
+    _, stops = _current_revision_with_stops(db, route)
+    original_stops, optimized_stops = _comparison_stop_orders(original, optimized, stops)
     return RouteComparisonResponse(
         original=_variant_out(original),
         optimized=_variant_out(optimized),
@@ -391,6 +541,418 @@ def get_comparison(db: Session, route: DailyRoute) -> RouteComparisonResponse:
             revision.constraints_json if revision is not None else {}
         ),
         revision_id=revision.id if revision is not None else None,
+        original_stops=original_stops,
+        optimized_stops=optimized_stops,
+        actual=_variant_out(actual) if actual is not None else None,
+        deviation=_execution_deviation(optimized, actual) if actual is not None else None,
+        execution_counts=_execution_counts(actual) if actual is not None else None,
+    )
+
+
+def publish_route(
+    db: Session,
+    route: DailyRoute,
+    payload: PublishRouteRequest,
+    *,
+    expected_version: int,
+    idempotency_key: str,
+    router: Router,
+    cipher: FieldCipher,
+) -> PublishRouteResponse:
+    """Congela la revisión actual: snapshot cifrado, geometría OSRM y status published.
+
+    HTTP 200 en una transacción (mismo criterio que publicar plan). Ledger `route.publish`.
+    """
+    identity_service.set_current_organization_context(db, organization_id=route.organization_id)
+    ledger_payload = {
+        "route_id": str(route.id),
+        **payload.model_dump(mode="json"),
+    }
+    job = begin_idempotent_job(
+        db,
+        organization_id=route.organization_id,
+        job_type=PUBLISH_JOB_TYPE,
+        idempotency_key=idempotency_key,
+        payload=ledger_payload,
+        resource_type=OPTIMIZE_RESOURCE_TYPE,
+        resource_id=route.id,
+    )
+    if job.result_json:
+        return PublishRouteResponse.model_validate(job.result_json)
+
+    published = _run_publish(
+        db,
+        route_id=route.id,
+        organization_id=route.organization_id,
+        expected_version=expected_version,
+        revision_id=payload.revision_id,
+        router=router,
+        cipher=cipher,
+    )
+    job.status = "succeeded"
+    job.progress = 100
+    job.error_code = None
+    job.result_json = published.model_dump(mode="json")
+    db.commit()
+    return published
+
+
+def _run_publish(
+    db: Session,
+    *,
+    route_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    expected_version: int,
+    revision_id: uuid.UUID | None,
+    router: Router,
+    cipher: FieldCipher,
+) -> PublishRouteResponse:
+    locked = (
+        db.query(DailyRoute)
+        .filter(DailyRoute.id == route_id, DailyRoute.organization_id == organization_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if locked is None:
+        raise DomainError(404, "ROUTE_NOT_FOUND", "Ruta no encontrada")
+    if locked.version != expected_version:
+        raise DomainError(409, "ROUTE_VERSION_CONFLICT", "La ruta ha sido modificada")
+    if locked.status in _UNPUBLISHABLE_ROUTE_STATUSES:
+        raise DomainError(409, "ROUTE_NOT_PUBLISHABLE", "La ruta no se puede publicar en este estado")
+    if locked.status == "published":
+        raise DomainError(409, "ROUTE_PUBLISHED", "La ruta ya está publicada")
+    if locked.status not in _PUBLISHABLE_ROUTE_STATUSES:
+        raise DomainError(409, "ROUTE_NOT_PUBLISHABLE", "La ruta no se puede publicar en este estado")
+
+    target_id = revision_id or locked.current_revision
+    if target_id is None:
+        raise DomainError(409, "REVISION_NOT_FOUND", "La ruta no tiene revisión para publicar")
+    if locked.current_revision is not None and target_id != locked.current_revision:
+        raise DomainError(409, "REVISION_NOT_CURRENT", "Solo se publica la revisión actual")
+
+    revision = (
+        db.query(RouteRevision)
+        .filter(
+            RouteRevision.id == target_id,
+            RouteRevision.route_id == locked.id,
+            RouteRevision.organization_id == locked.organization_id,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    if revision is None:
+        raise DomainError(404, "REVISION_NOT_FOUND", "Revisión no encontrada")
+    if revision.status == "published":
+        raise DomainError(409, "REVISION_PUBLISHED", "La revisión ya está publicada")
+    if revision.status != "draft":
+        raise DomainError(409, "REVISION_NOT_DRAFT", "Solo se publica una revisión en borrador")
+    if revision.solver_status != "feasible":
+        raise DomainError(409, "ROUTE_NOT_FEASIBLE", "Solo se publica una revisión factible")
+    if not isinstance(revision.origin, dict) or not isinstance(revision.destination, dict):
+        raise DomainError(422, "ROUTE_ORIGIN_MISSING", "La revisión no tiene origen/destino")
+
+    metrics = (
+        db.query(RouteMetric)
+        .filter(
+            RouteMetric.revision_id == revision.id,
+            RouteMetric.organization_id == locked.organization_id,
+            RouteMetric.variant.in_(("original", "optimized")),
+        )
+        .with_for_update()
+        .all()
+    )
+    by_variant = {metric.variant: metric for metric in metrics}
+    original = by_variant.get("original")
+    optimized = by_variant.get("optimized")
+    if original is None or optimized is None:
+        raise DomainError(
+            409,
+            "METRICS_UNAVAILABLE",
+            "La revisión actual no tiene métricas original y optimizada",
+        )
+    if _metric_is_stale(original) or _metric_is_stale(optimized):
+        raise DomainError(409, "METRICS_STALE", "Las métricas están pendientes de recálculo")
+
+    (
+        db.query(RouteStop)
+        .filter(
+            RouteStop.revision_id == revision.id,
+            RouteStop.organization_id == locked.organization_id,
+        )
+        .with_for_update()
+        .all()
+    )
+
+    stop_lat = func.ST_Y(cast(RouteStop.location, Geometry))
+    stop_lon = func.ST_X(cast(RouteStop.location, Geometry))
+    rows = (
+        db.query(RouteStop, Address, Patient, stop_lat, stop_lon)
+        .outerjoin(
+            Address,
+            (Address.patient_id == RouteStop.patient_id)
+            & (Address.organization_id == RouteStop.organization_id)
+            & Address.is_active.is_(True),
+        )
+        .outerjoin(Patient, Patient.id == RouteStop.patient_id)
+        .filter(
+            RouteStop.revision_id == revision.id,
+            RouteStop.organization_id == locked.organization_id,
+        )
+        .order_by(RouteStop.sequence)
+        .all()
+    )
+    if not rows:
+        raise DomainError(409, "NO_STOPS_TO_PUBLISH", "La revisión no tiene paradas")
+
+    stop_coords: list[Coordinate] = []
+    for stop, _address, _patient, lat, lon in rows:
+        if lat is None or lon is None:
+            raise DomainError(422, "STOP_LOCATION_MISSING", "Una parada no tiene coordenadas")
+        stop_coords.append(Coordinate(latitude=float(lat), longitude=float(lon)))
+
+    origin = _coordinate_from_payload(revision.origin)
+    destination = _coordinate_from_payload(revision.destination)
+    coordinates = assemble_table_coordinates(origin, stop_coords, destination)
+    geometry = _geometry_from_router(router, coordinates)
+    dataset_version = revision.osrm_dataset_version or get_settings().osrm_dataset_version
+    published_at = datetime.now(UTC)
+
+    for stop, address, _patient, lat, lon in rows:
+        stop.address_snapshot_ciphertext = _publish_address_snapshot(
+            cipher,
+            stop,
+            address,
+            latitude=float(lat),
+            longitude=float(lon),
+        )
+
+    snapshot = {
+        "geometry": geometry,
+        "osrm_dataset_version": dataset_version,
+        "osm_dataset_version": dataset_version,
+        "origin": revision.origin,
+        "destination": revision.destination,
+        "objective": revision.objective,
+        "order": [
+            {
+                "stop_id": str(stop.id),
+                "patient_id": str(stop.patient_id),
+                "external_ref": patient.external_ref if patient is not None else "",
+                "sequence": stop.sequence,
+                "lat": float(lat),
+                "lon": float(lon),
+            }
+            for stop, _address, patient, lat, lon in rows
+        ],
+        "metrics": {
+            "original": _metric_snapshot(original),
+            "optimized": _metric_snapshot(optimized),
+        },
+    }
+    constraints = dict(revision.constraints_json or {})
+    constraints["snapshot"] = snapshot
+    revision.constraints_json = constraints
+    flag_modified(revision, "constraints_json")
+    revision.osrm_dataset_version = dataset_version
+    revision.status = "published"
+    revision.published_at = published_at
+    locked.status = "published"
+    locked.version = expected_version + 1
+    db.flush()
+
+    return PublishRouteResponse(
+        route_id=locked.id,
+        revision_id=revision.id,
+        revision=revision.revision,
+        status=locked.status,
+        revision_status=revision.status,
+        version=locked.version,
+        published_at=published_at,
+        osrm_dataset_version=dataset_version,
+    )
+
+
+def report_stop_execution(
+    db: Session,
+    route: DailyRoute,
+    *,
+    stop_id: uuid.UUID,
+    payload: ReportStopExecutionRequest,
+    expected_version: int,
+) -> RouteStopExecutionOut:
+    """Reporta ejecución de una parada. If-Match = route_stops.version (4.BE.2).
+
+    No muta snapshot, geometría ni orden de la revisión publicada.
+    """
+    identity_service.set_current_organization_context(db, organization_id=route.organization_id)
+    locked = (
+        db.query(DailyRoute)
+        .filter(DailyRoute.id == route.id, DailyRoute.organization_id == route.organization_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if locked is None:
+        raise DomainError(404, "ROUTE_NOT_FOUND", "Ruta no encontrada")
+    if locked.status not in _EXECUTABLE_ROUTE_STATUSES:
+        raise DomainError(
+            409, "ROUTE_NOT_EXECUTABLE", "Solo se reporta ejecución en una ruta publicada"
+        )
+
+    stop = (
+        db.query(RouteStop)
+        .filter(
+            RouteStop.id == stop_id,
+            RouteStop.organization_id == locked.organization_id,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    if stop is None:
+        raise DomainError(404, "STOP_NOT_FOUND", "Parada no encontrada")
+
+    revision = (
+        db.query(RouteRevision)
+        .filter(
+            RouteRevision.id == stop.revision_id,
+            RouteRevision.organization_id == locked.organization_id,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    if revision is None or revision.route_id != locked.id:
+        raise DomainError(404, "STOP_NOT_FOUND", "Parada no encontrada")
+    if revision.status != "published":
+        raise DomainError(
+            409,
+            "REVISION_NOT_PUBLISHED",
+            "Solo se reporta ejecución sobre una revisión publicada",
+        )
+
+    if stop.version != expected_version:
+        raise DomainError(
+            409,
+            "STOP_VERSION_CONFLICT",
+            "La parada ha sido modificada",
+            errors=[_stop_latest_state(stop, locked.status)],
+        )
+
+    completed_at = _as_utc(payload.completed_at)
+    if _same_execution(stop, payload.status, completed_at, payload.failure_reason):
+        return _execution_out(stop, locked)
+
+    if completed_at is None:
+        completed_at = datetime.now(UTC)
+    stop.status = payload.status
+    stop.completed_at = completed_at
+    stop.failure_reason = payload.failure_reason
+    stop.version = expected_version + 1
+    db.flush()
+
+    pending = (
+        db.query(RouteStop.id)
+        .filter(
+            RouteStop.revision_id == revision.id,
+            RouteStop.organization_id == locked.organization_id,
+            RouteStop.status == "pending",
+        )
+        .count()
+    )
+    if pending == 0:
+        locked.status = "completed"
+    elif locked.status == "published":
+        locked.status = "in_progress"
+
+    reported_stops = (
+        db.query(RouteStop)
+        .filter(
+            RouteStop.revision_id == revision.id,
+            RouteStop.organization_id == locked.organization_id,
+        )
+        .order_by(RouteStop.sequence)
+        .all()
+    )
+    planned = (
+        db.query(RouteMetric)
+        .filter(
+            RouteMetric.revision_id == revision.id,
+            RouteMetric.organization_id == locked.organization_id,
+            RouteMetric.variant == "optimized",
+        )
+        .one_or_none()
+    )
+    upsert_actual_metric(
+        db,
+        revision_id=revision.id,
+        organization_id=locked.organization_id,
+        stops=reported_stops,
+        planned=planned,
+    )
+
+    db.commit()
+    db.refresh(locked)
+    db.refresh(stop)
+    return _execution_out(stop, locked)
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _same_execution(
+    stop: RouteStop,
+    status: str,
+    completed_at: datetime | None,
+    failure_reason: str | None,
+) -> bool:
+    if stop.status != status:
+        return False
+    if (stop.failure_reason or None) != (failure_reason or None):
+        return False
+    if completed_at is None:
+        return True
+    existing = _as_utc(stop.completed_at)
+    if existing is None:
+        return False
+    return existing == completed_at
+
+
+def _iso_utc(value: datetime | None) -> str | None:
+    aware = _as_utc(value)
+    if aware is None:
+        return None
+    return aware.isoformat().replace("+00:00", "Z")
+
+
+def _stop_latest_state(stop: RouteStop, route_status: str) -> dict[str, Any]:
+    return {
+        "field": "stop",
+        "code": "LATEST_STATE",
+        "message": "Estado más reciente de la parada",
+        "id": str(stop.id),
+        "status": stop.status,
+        "version": stop.version,
+        "completed_at": _iso_utc(stop.completed_at),
+        "failure_reason": stop.failure_reason,
+        "route_status": route_status,
+    }
+
+
+def _execution_out(stop: RouteStop, route: DailyRoute) -> RouteStopExecutionOut:
+    return RouteStopExecutionOut(
+        id=stop.id,
+        route_id=route.id,
+        revision_id=stop.revision_id,
+        patient_id=stop.patient_id,
+        sequence=stop.sequence,
+        status=stop.status,
+        completed_at=stop.completed_at,
+        failure_reason=stop.failure_reason,
+        version=stop.version,
+        route_status=route.status,
     )
 
 
@@ -401,6 +963,70 @@ def _variant_out(metric: RouteMetric) -> RouteMetricsVariantOut:
         service_seconds=metric.service_seconds,
         estimated_cost=metric.estimated_cost,
     )
+
+
+def _execution_deviation(planned: RouteMetric, actual: RouteMetric) -> RouteMetricsSavingsOut:
+    comparable = (actual.calculation_json or {}).get("distance_source") != "unavailable"
+    distance_delta = actual.distance_m - planned.distance_m if comparable else 0
+    travel_delta = actual.travel_seconds - planned.travel_seconds
+    cost_delta = round(actual.estimated_cost - planned.estimated_cost, 4)
+    if planned.travel_seconds == 0:
+        pct = 0.0
+    else:
+        pct = round(travel_delta / planned.travel_seconds * 100, 2)
+    return RouteMetricsSavingsOut(
+        distance_m=distance_delta,
+        travel_seconds=travel_delta,
+        estimated_cost=cost_delta,
+        travel_seconds_pct=pct,
+    )
+
+
+def _execution_counts(actual: RouteMetric) -> RouteExecutionCountsOut:
+    payload = actual.calculation_json or {}
+    completed = int(payload.get("completed") or 0)
+    failed = int(payload.get("failed") or 0)
+    skipped = int(payload.get("skipped") or 0)
+    pending = int(payload.get("pending") or 0)
+    return RouteExecutionCountsOut(
+        planned=completed + failed + skipped + pending,
+        completed=completed,
+        failed=failed,
+        skipped=skipped,
+        pending=pending,
+    )
+
+
+def _tour_nodes(order: list[Any]) -> list[int]:
+    nodes = [int(item) for item in order]
+    if len(nodes) <= 2:
+        return []
+    return nodes[1:-1]
+
+
+def _comparison_stop_orders(
+    original: RouteMetric,
+    optimized: RouteMetric,
+    stops: list[RouteStop],
+) -> tuple[list[RouteStopRefOut], list[RouteStopRefOut]]:
+    """Reconstruye orden original vs optimizado (índices de matriz 1..N, sin depósito)."""
+    optimized_ids = [stop.patient_id for stop in stops]
+    optimized_refs = [
+        RouteStopRefOut(patient_id=stop.patient_id, sequence=stop.sequence) for stop in stops
+    ]
+    opt_nodes = _tour_nodes(list((optimized.calculation_json or {}).get("order") or []))
+    orig_nodes = _tour_nodes(list((original.calculation_json or {}).get("order") or []))
+    if len(opt_nodes) != len(optimized_ids) or not orig_nodes:
+        return [], optimized_refs
+    node_to_patient = dict(zip(opt_nodes, optimized_ids, strict=True))
+    original_ids = [node_to_patient[node] for node in orig_nodes if node in node_to_patient]
+    if len(original_ids) != len(optimized_ids):
+        return [], optimized_refs
+    original_refs = [
+        RouteStopRefOut(patient_id=patient_id, sequence=index)
+        for index, patient_id in enumerate(original_ids, start=1)
+    ]
+    return original_refs, optimized_refs
 
 
 def _metric_is_stale(metric: RouteMetric) -> bool:
@@ -529,6 +1155,8 @@ def _run_optimize(
 
     locked.current_revision = revision.id
     locked.version = locked.version + 1
+    if locked.status == "published":
+        locked.status = "ready" if feasible else "draft"
     db.flush()
     return revision
 
@@ -737,6 +1365,156 @@ def _diagnostics_from_constraints(constraints: dict | None) -> list[RouteDiagnos
     return [RouteDiagnosticOut.model_validate(item) for item in raw]
 
 
+def _stops_fingerprint(stops: list[_StopInput]) -> str:
+    rows = sorted(
+        (
+            {
+                "patient_id": str(stop.patient_id),
+                "lat": round(stop.latitude, COORD_DECIMALS),
+                "lon": round(stop.longitude, COORD_DECIMALS),
+                "service_minutes": stop.service_minutes,
+            }
+            for stop in stops
+        ),
+        key=lambda item: item["patient_id"],
+    )
+    return hash_request_payload(rows)
+
+
+def _assert_patients_in_organization(
+    db: Session, organization_id: uuid.UUID, patient_ids: list[uuid.UUID]
+) -> None:
+    found = {
+        row[0]
+        for row in db.query(Patient.id)
+        .filter(Patient.organization_id == organization_id, Patient.id.in_(patient_ids))
+        .all()
+    }
+    if found != set(patient_ids):
+        raise DomainError(404, "PATIENT_NOT_FOUND", "Paciente no encontrado")
+
+
+def _assert_patients_not_on_other_routes(
+    db: Session, route: DailyRoute, patient_ids: list[uuid.UUID]
+) -> None:
+    assigned = (
+        db.query(RouteStop.patient_id)
+        .join(DailyRoute, DailyRoute.current_revision == RouteStop.revision_id)
+        .filter(
+            DailyRoute.organization_id == route.organization_id,
+            DailyRoute.service_date == route.service_date,
+            DailyRoute.id != route.id,
+            DailyRoute.status.notin_(tuple(_INACTIVE_ROUTE_STATUSES)),
+            RouteStop.patient_id.in_(patient_ids),
+        )
+        .all()
+    )
+    if assigned:
+        raise DomainError(
+            409,
+            "STOP_ALREADY_ASSIGNED",
+            "Una parada ya pertenece a otra ruta activa en esa fecha",
+        )
+
+
+def _confirmed_stop_locations(
+    db: Session, organization_id: uuid.UUID, patient_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[Address, float, float]]:
+    addr_lat = func.ST_Y(cast(Address.location, Geometry))
+    addr_lon = func.ST_X(cast(Address.location, Geometry))
+    rows = (
+        db.query(Address, addr_lat, addr_lon)
+        .filter(
+            Address.organization_id == organization_id,
+            Address.patient_id.in_(patient_ids),
+            Address.is_active.is_(True),
+            Address.geocode_status.in_(CONFIRMED_GEOCODE_STATUSES),
+            Address.location.isnot(None),
+        )
+        .all()
+    )
+    by_patient: dict[uuid.UUID, tuple[Address, float, float]] = {}
+    for address, lat, lon in rows:
+        if lat is None or lon is None:
+            continue
+        by_patient[address.patient_id] = (address, float(lat), float(lon))
+    if set(by_patient) != set(patient_ids):
+        raise DomainError(
+            422,
+            "STOP_LOCATION_MISSING",
+            "Faltan coordenadas confirmadas para una parada de la ruta",
+        )
+    return by_patient
+
+
+def _service_minutes_by_patient(
+    db: Session, revision: RouteRevision
+) -> dict[uuid.UUID, int]:
+    rows = (
+        db.query(RouteStop.patient_id, RouteStop.service_minutes)
+        .filter(
+            RouteStop.revision_id == revision.id,
+            RouteStop.organization_id == revision.organization_id,
+        )
+        .all()
+    )
+    return {patient_id: minutes or DEFAULT_SERVICE_MINUTES for patient_id, minutes in rows}
+
+
+def _open_draft_revision(
+    db: Session,
+    route: DailyRoute,
+    *,
+    previous: RouteRevision | None,
+    created_by: uuid.UUID,
+) -> RouteRevision:
+    revision = RouteRevision(
+        organization_id=route.organization_id,
+        route_id=route.id,
+        revision=_next_revision_number(db, route),
+        status="draft",
+        objective=previous.objective if previous is not None else "time",
+        origin=previous.origin if previous is not None else None,
+        destination=previous.destination if previous is not None else None,
+        solver_status="pending",
+        constraints_json={},
+        osrm_dataset_version=previous.osrm_dataset_version if previous is not None else None,
+        created_by=created_by,
+    )
+    db.add(revision)
+    db.flush()
+    return revision
+
+
+def _clear_revision_stops(db: Session, revision: RouteRevision) -> None:
+    stops = (
+        db.query(RouteStop)
+        .filter(
+            RouteStop.revision_id == revision.id,
+            RouteStop.organization_id == revision.organization_id,
+        )
+        .all()
+    )
+    for stop in stops:
+        db.delete(stop)
+    db.flush()
+
+
+def _mark_metrics_stale(db: Session, revision: RouteRevision) -> None:
+    metrics = (
+        db.query(RouteMetric)
+        .filter(
+            RouteMetric.revision_id == revision.id,
+            RouteMetric.organization_id == revision.organization_id,
+        )
+        .all()
+    )
+    for metric in metrics:
+        payload = dict(metric.calculation_json or {})
+        payload["stale"] = True
+        metric.calculation_json = payload
+
+
 def _address_snapshot(cipher: FieldCipher | None, stop: _StopInput) -> str:
     if cipher is None:
         return ""
@@ -747,6 +1525,112 @@ def _address_snapshot(cipher: FieldCipher | None, stop: _StopInput) -> str:
         ensure_ascii=False,
     )
     return cipher.encrypt(payload)
+
+
+def _publish_address_snapshot(
+    cipher: FieldCipher,
+    stop: RouteStop,
+    address: Address | None,
+    *,
+    latitude: float,
+    longitude: float,
+) -> str:
+    payload: dict[str, Any] = {
+        "patient_id": str(stop.patient_id),
+        "sequence": stop.sequence,
+        "lat": latitude,
+        "lon": longitude,
+        "postal_code": address.postal_code if address is not None else "",
+        "municipality": address.municipality if address is not None else "",
+        "province": address.province if address is not None else "",
+    }
+    if address is not None and address.address_ciphertext:
+        decrypted = _try_decrypt_address(cipher, address.address_ciphertext)
+        if decrypted:
+            payload["address"] = decrypted
+    return cipher.encrypt(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    )
+
+
+def _metric_snapshot(metric: RouteMetric) -> dict[str, Any]:
+    return {
+        "distance_m": metric.distance_m,
+        "travel_seconds": metric.travel_seconds,
+        "service_seconds": metric.service_seconds,
+        "estimated_cost": metric.estimated_cost,
+        "matrix_hash": (metric.calculation_json or {}).get("matrix_hash"),
+        "dataset_version": (metric.calculation_json or {}).get("dataset_version"),
+    }
+
+
+def _try_decrypt_address(cipher: FieldCipher, token: str) -> str | None:
+    try:
+        return cipher.decrypt(token)
+    except (ValueError, KeyError, UnicodeDecodeError, InvalidTag):
+        return None
+
+
+def _coordinate_from_payload(payload: dict[str, Any]) -> Coordinate:
+    try:
+        return Coordinate(latitude=float(payload["lat"]), longitude=float(payload["lon"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DomainError(422, "ROUTE_ORIGIN_MISSING", "Origen o destino no válido") from exc
+
+
+def _geometry_from_router(router: Router, coordinates: list[Coordinate]) -> dict[str, Any]:
+    try:
+        payload = _run_coro(router.route(coordinates))
+    except DomainError:
+        raise
+    except Exception as exc:
+        raise DomainError(
+            503,
+            "ROUTER_UNAVAILABLE",
+            "OSRM no disponible para la geometría de publicación",
+        ) from exc
+    geometry = _normalize_route_geometry(payload)
+    if geometry is None:
+        raise DomainError(
+            409,
+            "ROUTE_GEOMETRY_UNAVAILABLE",
+            "No hay geometría OSRM para publicar",
+        )
+    return geometry
+
+
+def _normalize_route_geometry(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    routes = payload.get("routes")
+    if isinstance(routes, list) and routes:
+        geom = (routes[0] or {}).get("geometry")
+        if isinstance(geom, dict) and geom.get("coordinates"):
+            return geom
+    geom = payload.get("geometry")
+    if isinstance(geom, dict) and geom.get("coordinates"):
+        return geom
+    raw_coords = payload.get("coordinates")
+    if not isinstance(raw_coords, list) or not raw_coords:
+        return None
+    converted: list[list[float]] = []
+    for item in raw_coords:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        lat, lon = float(item[0]), float(item[1])
+        converted.append([lon, lat])
+    if not converted:
+        return None
+    return {"type": "LineString", "coordinates": converted}
+
+
+def _run_coro(coro: Any) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _point_ewkt(lon: float, lat: float) -> str:
@@ -792,6 +1676,54 @@ def _lock_job(db: Session, job_id: uuid.UUID | None, *, organization_id: uuid.UU
         .one_or_none()
     )
     return job
+
+
+def _stop_coordinates(
+    db: Session, stops: list[RouteStop]
+) -> dict[uuid.UUID, tuple[float | None, float | None]]:
+    if not stops:
+        return {}
+    stop_lat = func.ST_Y(cast(RouteStop.location, Geometry))
+    stop_lon = func.ST_X(cast(RouteStop.location, Geometry))
+    rows = (
+        db.query(RouteStop.id, stop_lat, stop_lon)
+        .filter(RouteStop.id.in_([stop.id for stop in stops]))
+        .all()
+    )
+    coords: dict[uuid.UUID, tuple[float | None, float | None]] = {}
+    for stop_id, lat, lon in rows:
+        coords[stop_id] = (
+            float(lat) if lat is not None else None,
+            float(lon) if lon is not None else None,
+        )
+    return coords
+
+
+def _stop_external_refs(
+    db: Session,
+    organization_id: uuid.UUID,
+    revision: RouteRevision | None,
+    stops: list[RouteStop],
+) -> dict[uuid.UUID, str]:
+    refs: dict[uuid.UUID, str] = {}
+    snapshot = ((revision.constraints_json or {}).get("snapshot") if revision else None) or {}
+    for item in snapshot.get("order") or []:
+        raw_id = item.get("patient_id")
+        if not raw_id:
+            continue
+        try:
+            refs[uuid.UUID(str(raw_id))] = str(item.get("external_ref") or "")
+        except ValueError:
+            continue
+    missing = [stop.patient_id for stop in stops if stop.patient_id not in refs]
+    if missing:
+        for patient_id, external_ref in (
+            db.query(Patient.id, Patient.external_ref)
+            .filter(Patient.organization_id == organization_id, Patient.id.in_(missing))
+            .all()
+        ):
+            refs[patient_id] = external_ref
+    return refs
 
 
 def _current_revision_with_stops(

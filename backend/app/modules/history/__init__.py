@@ -1,4 +1,1 @@
-"""Snapshots, ejecución de paradas, filtros y exportaciones históricas.
-
-No debe hacer: sobrescribir una revisión publicada. Ref: diseño sección 3.1, Fase 4.
-"""
+"""Histórico de snapshots de ruta. Ref: Fase 4, RF-23, RF-24."""

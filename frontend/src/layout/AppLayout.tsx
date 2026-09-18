@@ -6,6 +6,10 @@ const NAV_ITEMS = [
   { to: "/mapa", label: "Mapa" },
   { to: "/zonas", label: "Zonas" },
   { to: "/planificacion", label: "Planificación" },
+  { to: "/optimizacion", label: "Optimizador" },
+  { to: "/historico", label: "Histórico" },
+  { to: "/campo", label: "Campo" },
+  { to: "/compartir", label: "Compartir" },
   { to: "/importar", label: "Importar" },
   { to: "/geocodificacion", label: "Geocodificación" },
 ];

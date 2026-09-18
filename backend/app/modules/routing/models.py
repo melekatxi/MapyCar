@@ -2,7 +2,7 @@
 
 Una revisión `published` es inmutable en capa de aplicación: no hay trigger de
 UPDATE. El CHECK `draft|published` (y `published_at` coherente) documenta el
-estado; un cambio posterior crea una nueva revisión `draft` (3.BE.11).
+estado; un cambio posterior crea una nueva revisión `draft`.
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ class RouteStop(Base):
     revision_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     patient_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    # Snapshot cifrado en publish/optimize (ADR-08). Vacío hasta 3.BE.11.
+    # Snapshot cifrado en publish (ADR-08). Optimize puede dejarlo vacío.
     address_snapshot_ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="")
     location = mapped_column(
         Geography(geometry_type="POINT", srid=4326, spatial_index=False),

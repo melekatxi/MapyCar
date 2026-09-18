@@ -8,6 +8,10 @@ import { GeocodingTrayPage } from "./geocoding/GeocodingTrayPage";
 import { OperationalMapPage } from "./map/OperationalMapPage";
 import { ZoneEditorPage } from "./zoning/ZoneEditorPage";
 import { PlanCalendarPage } from "./planning/PlanCalendarPage";
+import { OptimizerPage } from "./routing/OptimizerPage";
+import { HistoryPage } from "./history/HistoryPage";
+import { FieldPage } from "./field/FieldPage";
+import { SharingPage } from "./sharing/SharingPage";
 
 export default function App() {
   return (
@@ -19,6 +23,10 @@ export default function App() {
             <Route path="/mapa" element={<OperationalMapPage />} />
             <Route path="/zonas" element={<ZoneEditorPage />} />
             <Route path="/planificacion" element={<PlanCalendarPage />} />
+            <Route path="/optimizacion" element={<OptimizerPage />} />
+            <Route path="/historico" element={<HistoryPage />} />
+            <Route path="/campo" element={<FieldPage />} />
+            <Route path="/compartir" element={<SharingPage />} />
             <Route path="/importar" element={<ImportWizardPage />} />
             <Route path="/importar/:batchId" element={<ImportProgressPage />} />
             <Route path="/geocodificacion" element={<GeocodingTrayPage />} />

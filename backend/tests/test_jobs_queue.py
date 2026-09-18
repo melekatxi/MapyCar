@@ -40,6 +40,16 @@ def test_optimization_queue_is_registered() -> None:
     assert queue.get_status(job.id) == "queued"
 
 
+def test_notifications_queue_is_registered() -> None:
+    client = fakeredis.FakeStrictRedis()
+    queue = JobQueue(client)
+    job = queue.enqueue(
+        queue="notifications",
+        payload={"event_id": "abc", "organization_id": "org"},
+    )
+    assert queue.get_status(job.id) == "queued"
+
+
 def test_job_retries_with_backoff_before_failing() -> None:
     client = fakeredis.FakeStrictRedis()
     queue = JobQueue(client, max_attempts=2, base_backoff_seconds=0.0)

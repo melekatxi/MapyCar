@@ -1,5 +1,6 @@
 import { ApiError, apiClient } from "./client";
 import type {
+  DailyRouteSummary,
   MonthlyPlan,
   PlanCreateResponse,
   PlanGenerateResponse,
@@ -58,6 +59,15 @@ export function getPlan(
   organizationId: string,
 ): Promise<MonthlyPlan> {
   return apiClient.get(`/plans/${planId}`, {
+    organization_id: organizationId,
+  });
+}
+
+export function listPlanRoutes(
+  planId: string,
+  organizationId: string,
+): Promise<{ routes: DailyRouteSummary[] }> {
+  return apiClient.get(`/plans/${planId}/routes`, {
     organization_id: organizationId,
   });
 }

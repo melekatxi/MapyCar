@@ -11,8 +11,14 @@ from testcontainers.core.waiting_utils import wait_for_logs
 
 from app.core.crypto import FieldCipher
 from app.core.crypto_vault import VaultKeyProvider, write_keys
+from tests.conftest import has_container_runtime
 
 ROOT_TOKEN = "sofia-test-root-token"
+
+pytestmark = pytest.mark.skipif(
+    not has_container_runtime(),
+    reason="Vault de 0.DATA.4 usa testcontainers; sin Docker/Podman se omite.",
+)
 
 
 @pytest.fixture(scope="module")

@@ -1,7 +1,7 @@
 name: sofia-dev
 
 # Entorno compartido API + workers. El worker CLI exige exactamente una cola:
-# `python -m app.jobs.worker <cola>` (imports | geocoding | zoning | planning | optimization).
+# `python -m app.jobs.worker <cola>` (imports | geocoding | zoning | planning | optimization | exports | notifications).
 x-sofia-backend-env: &sofia-backend-env
   SOFIA_DATABASE_URL: postgresql+psycopg://sofia:sofia_dev_password@db:5432/sofia
   SOFIA_REDIS_URL: redis://redis:6379/0
@@ -179,6 +179,26 @@ services:
     build: ./backend
     restart: unless-stopped
     command: ["python", "-m", "app.jobs.worker", "optimization"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  worker-exports:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "exports"]
+    environment:
+      <<: *sofia-backend-env
+    depends_on:
+      <<: *sofia-backend-depends
+    networks: [backend]
+
+  worker-notifications:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker", "notifications"]
     environment:
       <<: *sofia-backend-env
     depends_on:

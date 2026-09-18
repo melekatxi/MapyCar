@@ -300,8 +300,16 @@ button:disabled {
   }
 
   .map-page__layout,
-  .geocoding-tray__layout {
+  .geocoding-tray__layout,
+  .optimizer__coords,
+  .history-layout,
+  .history-meta,
+  .sharing-layout {
     grid-template-columns: 1fr;
+  }
+
+  .field-stop__actions button {
+    flex: 1 1 8rem;
   }
 }
 
@@ -345,6 +353,142 @@ button:disabled {
   list-style: none;
   padding: 0;
   margin: 0.5rem 0 0;
+}
+
+.optimizer__form {
+  max-width: 520px;
+}
+
+.optimizer__coords {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0;
+}
+
+.optimizer__coords legend {
+  font-weight: 600;
+}
+
+.optimizer__check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.optimizer progress {
+  width: 100%;
+  height: 0.75rem;
+}
+
+.optimizer__diagnostics {
+  border-color: #ef9a9a;
+  background: #fff8f8;
+}
+
+.optimizer__diagnostic-list {
+  padding-left: 1.2rem;
+}
+
+.optimizer__diagnostic-actions {
+  flex-wrap: wrap;
+}
+
+.optimizer__map .leaflet-container {
+  height: 40vh;
+  margin-top: 1rem;
+}
+
+.history-filters {
+  max-width: 520px;
+}
+
+.history-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.history-row--selected {
+  background: #e3f2fd;
+}
+
+.history-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1rem;
+}
+
+.history-meta dt {
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.history-meta dd {
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+}
+
+.history-counts {
+  color: #555;
+}
+
+.field-page__filters {
+  max-width: 520px;
+}
+
+.sharing__filters {
+  max-width: 520px;
+}
+
+.sharing-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.sharing__risk {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.field-stops {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.field-stop {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.field-stop p {
+  margin: 0.25rem 0 0;
+  color: #555;
+}
+
+.field-stop__actions,
+.field-stop__fail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.field-stop__fail {
+  flex-direction: column;
 }
 
 .zone-card__patients li {

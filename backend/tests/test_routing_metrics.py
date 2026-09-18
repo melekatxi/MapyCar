@@ -1,9 +1,10 @@
-"""Métricas original vs optimizada sobre la misma matriz. Ref: 3.BE.6, RF-18."""
+"""Métricas original vs optimizada sobre la misma matriz. Ref: 3.BE.6, RF-18, 4.BE.3."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,12 @@ from app.modules.identity.models import Organization, Team, User, UserMembership
 from app.modules.imports.models import Patient
 from app.modules.planning.models import DailyRoute, MonthlyPlan
 from app.modules.routing.matrix import ComputedMatrix
-from app.modules.routing.metrics import build_metrics, metrics_for_order, persist_metrics
+from app.modules.routing.metrics import (
+    build_metrics,
+    metrics_for_order,
+    metrics_from_reports,
+    persist_metrics,
+)
 from app.modules.routing.models import RouteMetric, RouteRevision
 from app.modules.zoning.models import Zone
 
@@ -153,3 +159,60 @@ def test_persist_metrics_writes_original_and_optimized_rows(db_session: Session)
     by_variant = {m.variant: m for m in stored}
     assert by_variant["original"].travel_seconds != by_variant["optimized"].travel_seconds
     assert by_variant["original"].service_seconds == by_variant["optimized"].service_seconds
+
+
+def _reported(**kwargs: object) -> SimpleNamespace:
+    values = {
+        "id": uuid.uuid4(),
+        "status": "pending",
+        "completed_at": None,
+        "service_minutes": 10,
+        "sequence": 1,
+    }
+    values.update(kwargs)
+    return SimpleNamespace(**values)
+
+
+def test_metrics_from_reports_span_minus_service_skips_do_not_travel() -> None:
+    t0 = datetime(2026, 9, 18, 8, 0, tzinfo=UTC)
+    totals = metrics_from_reports(
+        [
+            _reported(status="completed", completed_at=t0, sequence=1),
+            _reported(
+                status="completed",
+                completed_at=t0 + timedelta(minutes=40),
+                sequence=2,
+            ),
+            _reported(
+                status="skipped",
+                completed_at=t0 + timedelta(hours=2),
+                sequence=3,
+            ),
+        ],
+        planned_travel_seconds=1800,
+        planned_cost=9.0,
+    )
+    assert totals["service_seconds"] == 1200
+    assert totals["travel_seconds"] == 1200
+    assert totals["distance_m"] == 0
+    assert totals["estimated_cost"] == 6.0
+    assert totals["calculation_json"]["skipped"] == 1
+    assert totals["calculation_json"]["distance_source"] == "unavailable"
+
+
+def test_metrics_from_reports_failed_is_visited_without_service() -> None:
+    t0 = datetime(2026, 9, 18, 8, 0, tzinfo=UTC)
+    totals = metrics_from_reports(
+        [
+            _reported(status="failed", completed_at=t0, sequence=1),
+            _reported(
+                status="completed",
+                completed_at=t0 + timedelta(minutes=30),
+                sequence=2,
+            ),
+        ]
+    )
+    assert totals["service_seconds"] == 600
+    assert totals["travel_seconds"] == 1200
+    assert totals["calculation_json"]["failed"] == 1
+    assert totals["calculation_json"]["completed"] == 1

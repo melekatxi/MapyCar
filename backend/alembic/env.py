@@ -14,6 +14,7 @@ from app.modules.jobs import models as jobs_models  # noqa: F401 - registra meta
 from app.modules.notifications import models as notifications_models  # noqa: F401
 from app.modules.planning import models as planning_models  # noqa: F401 - registra metadata
 from app.modules.routing import models as routing_models  # noqa: F401 - registra metadata
+from app.modules.sharing import models as sharing_models  # noqa: F401 - registra metadata
 from app.modules.zoning import models as zoning_models  # noqa: F401 - registra metadata
 
 config = context.config

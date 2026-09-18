@@ -16,6 +16,7 @@ _TITLES: dict[int, str] = {
     403: "No autorizado",
     404: "Recurso no encontrado",
     409: "Conflicto",
+    410: "Ya no disponible",
     413: "Fichero demasiado grande",
     415: "Formato no soportado",
     422: "Datos no válidos",
@@ -52,7 +53,11 @@ def register_error_handlers(app: FastAPI) -> None:
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = getattr(exc, "code", None) or f"HTTP_{exc.status_code}"
         body = build_error_body(
-            status=exc.status_code, request=request, code=code, detail=str(exc.detail)
+            status=exc.status_code,
+            request=request,
+            code=code,
+            detail=str(exc.detail),
+            errors=getattr(exc, "errors", None),
         )
         return JSONResponse(status_code=exc.status_code, content=body)
 
@@ -84,6 +89,13 @@ def register_error_handlers(app: FastAPI) -> None:
 class DomainError(HTTPException):
     """Excepción de dominio con código estable para el body de error."""
 
-    def __init__(self, status_code: int, code: str, detail: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        detail: str,
+        errors: list[dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.code = code
+        self.errors = errors or []

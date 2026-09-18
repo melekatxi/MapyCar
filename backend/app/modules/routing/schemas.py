@@ -1,12 +1,12 @@
-"""Esquemas Pydantic de rutas: optimización, reordenación y comparativa.
+"""Esquemas Pydantic de rutas: optimización, paradas, comparativa y publish.
 
-Ref: diseño sección 8.5, RF-16, RF-18, RF-19, RF-20, 3.BE.7, 3.BE.8, 3.BE.12.
+Ref: diseño sección 8.5, RF-16, RF-18–21, 3.BE.7–12.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -69,6 +69,20 @@ class ReorderStopsResponse(BaseModel):
     metrics_pending: bool
 
 
+class ReplaceStopsRequest(BaseModel):
+    """Sustituye el conjunto de paradas (añadir/quitar/modificar direcciones)."""
+
+    patient_ids: list[uuid.UUID] = Field(min_length=1, max_length=25)
+
+
+class ReplaceStopsResponse(BaseModel):
+    route_id: uuid.UUID
+    revision_id: uuid.UUID
+    version: int
+    stops: list[RouteStopOrderOut]
+    metrics_pending: bool
+
+
 class RouteMetricsVariantOut(BaseModel):
     distance_m: int
     travel_seconds: int
@@ -90,6 +104,19 @@ class RouteDiagnosticOut(BaseModel):
     suggested_actions: list[str] = Field(default_factory=list)
 
 
+class RouteStopRefOut(BaseModel):
+    patient_id: uuid.UUID
+    sequence: int
+
+
+class RouteExecutionCountsOut(BaseModel):
+    planned: int
+    completed: int
+    failed: int
+    skipped: int
+    pending: int
+
+
 class RouteComparisonResponse(BaseModel):
     original: RouteMetricsVariantOut
     optimized: RouteMetricsVariantOut
@@ -97,12 +124,26 @@ class RouteComparisonResponse(BaseModel):
     solver_status: str | None = None
     diagnostics: list[RouteDiagnosticOut] = Field(default_factory=list)
     revision_id: uuid.UUID | None = None
+    original_stops: list[RouteStopRefOut] = Field(default_factory=list)
+    optimized_stops: list[RouteStopRefOut] = Field(default_factory=list)
+    actual: RouteMetricsVariantOut | None = None
+    deviation: RouteMetricsSavingsOut | None = None
+    execution_counts: RouteExecutionCountsOut | None = None
 
 
 class RouteStopOut(BaseModel):
     id: uuid.UUID
     patient_id: uuid.UUID
     sequence: int
+    status: str = "pending"
+    version: int = 1
+    completed_at: datetime | None = None
+    failure_reason: str | None = None
+    window_start: str | None = None
+    window_end: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    external_ref: str | None = None
 
 
 class RouteDetailResponse(BaseModel):
@@ -120,3 +161,60 @@ class RouteDetailResponse(BaseModel):
     solver_status: str | None = None
     diagnostics: list[RouteDiagnosticOut] = Field(default_factory=list)
     stops: list[RouteStopOut] = Field(default_factory=list)
+
+
+class ExportRouteRequest(BaseModel):
+    format: Literal["pdf", "png", "navigation_link"]
+    revision_id: uuid.UUID | None = None
+
+
+class ExportRouteResponse(BaseModel):
+    job_id: uuid.UUID
+    status: str
+    format: str
+
+
+class PublishRouteRequest(BaseModel):
+    revision_id: uuid.UUID | None = None
+
+
+class PublishRouteResponse(BaseModel):
+    route_id: uuid.UUID
+    revision_id: uuid.UUID
+    revision: int
+    status: str
+    revision_status: str
+    version: int
+    published_at: datetime
+    osrm_dataset_version: str | None = None
+
+
+class ReportStopExecutionRequest(BaseModel):
+    """Ejecución de parada (4.BE.2): estado, hora y motivo. If-Match = stop.version."""
+
+    status: Literal["completed", "failed", "skipped"]
+    completed_at: datetime | None = None
+    failure_reason: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _execution_fields(self) -> Self:
+        reason = (self.failure_reason or "").strip() or None
+        if self.status == "failed" and reason is None:
+            raise ValueError("failure_reason es obligatorio si status es failed")
+        if self.status == "completed":
+            reason = None
+        self.failure_reason = reason
+        return self
+
+
+class RouteStopExecutionOut(BaseModel):
+    id: uuid.UUID
+    route_id: uuid.UUID
+    revision_id: uuid.UUID
+    patient_id: uuid.UUID
+    sequence: int
+    status: str
+    completed_at: datetime | None = None
+    failure_reason: str | None = None
+    version: int
+    route_status: str

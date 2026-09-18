@@ -15,6 +15,12 @@ export interface ApiErrorBody {
     code?: string;
     row?: number;
     message?: string;
+    id?: string;
+    status?: string;
+    version?: number;
+    completed_at?: string | null;
+    failure_reason?: string | null;
+    route_status?: string;
   }>;
 }
 
@@ -130,9 +136,29 @@ async function request<T>(
   return payload as T;
 }
 
+async function requestBlob(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const response = await fetch(buildUrl(path, options.query), {
+    method: options.method ?? "GET",
+    headers,
+  });
+  if (!response.ok) {
+    const payload = (await response.json()) as ApiErrorBody;
+    throw new ApiError(payload);
+  }
+  return response.blob();
+}
+
 export const apiClient = {
   get: <T>(path: string, query?: Record<string, string | undefined>) =>
     request<T>(path, { query }),
+  getBlob: (path: string, query?: Record<string, string | undefined>) =>
+    requestBlob(path, { query }),
   post: <T>(
     path: string,
     body?: unknown,
@@ -148,4 +174,6 @@ export const apiClient = {
     body?: unknown,
     options?: Omit<RequestOptions, "method" | "body">,
   ) => request<T>(path, { ...options, method: "PATCH", body }),
+  delete: <T>(path: string, query?: Record<string, string | undefined>) =>
+    request<T>(path, { method: "DELETE", query }),
 };

@@ -242,3 +242,209 @@ export interface AddressCandidates {
   geocode_status: GeocodeStatus;
   candidates: Candidate[];
 }
+
+export interface DailyRouteSummary {
+  id: string;
+  plan_id: string;
+  organization_id: string;
+  zone_id: string;
+  service_date: string;
+  assignee_id: string;
+  status: string;
+  version: number;
+  current_revision: string | null;
+}
+
+export interface LatLon {
+  lat: number;
+  lon: number;
+}
+
+export interface OptimizeRouteRequest {
+  objective: "time" | "cost";
+  origin: LatLon;
+  destination?: LatLon | null;
+  cost_per_km?: number;
+  cost_per_hour?: number;
+  vehicle_count?: number;
+  vehicle_time_capacity_seconds?: number | null;
+  service_minutes?: number | null;
+}
+
+export interface OptimizeRouteResponse {
+  job_id: string;
+  status: string;
+  revision_id: string | null;
+}
+
+export interface RouteDiagnostic {
+  code: string;
+  node_indices: number[];
+  detail: string;
+  suggested_actions: string[];
+}
+
+export interface RouteStop {
+  id: string;
+  patient_id: string;
+  sequence: number;
+  status?: string;
+  version?: number;
+  completed_at?: string | null;
+  failure_reason?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  external_ref?: string | null;
+}
+
+export type StopExecutionStatus = "completed" | "failed" | "skipped";
+
+export interface StopExecutionReport {
+  id: string;
+  route_id: string;
+  revision_id: string;
+  patient_id: string;
+  sequence: number;
+  status: string;
+  completed_at: string | null;
+  failure_reason: string | null;
+  version: number;
+  route_status: string;
+}
+
+export interface RouteMetricsVariant {
+  distance_m: number;
+  travel_seconds: number;
+  service_seconds: number;
+  estimated_cost: number;
+}
+
+export interface RouteMetricsSavings {
+  distance_m: number;
+  travel_seconds: number;
+  estimated_cost: number;
+  travel_seconds_pct: number;
+}
+
+export interface RouteStopRef {
+  patient_id: string;
+  sequence: number;
+}
+
+export interface RouteExecutionCounts {
+  planned: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  pending: number;
+}
+
+export interface RouteComparison {
+  original: RouteMetricsVariant;
+  optimized: RouteMetricsVariant;
+  savings: RouteMetricsSavings;
+  solver_status: string | null;
+  diagnostics: RouteDiagnostic[];
+  revision_id: string | null;
+  original_stops: RouteStopRef[];
+  optimized_stops: RouteStopRef[];
+  actual?: RouteMetricsVariant | null;
+  deviation?: RouteMetricsSavings | null;
+  execution_counts?: RouteExecutionCounts | null;
+}
+
+export interface RouteDetail {
+  id: string;
+  plan_id: string;
+  organization_id: string;
+  zone_id: string;
+  service_date: string;
+  assignee_id: string;
+  status: string;
+  version: number;
+  current_revision: string | null;
+  revision: number | null;
+  objective: string | null;
+  solver_status: string | null;
+  diagnostics: RouteDiagnostic[];
+  stops: RouteStop[];
+}
+
+export type ExportFormat = "pdf" | "png" | "navigation_link";
+
+export interface ExportRouteResponse {
+  job_id: string;
+  status: string;
+  format: ExportFormat;
+}
+
+export interface JobStatus {
+  id: string;
+  organization_id: string;
+  type: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  status: string;
+  progress: number;
+  attempt: number;
+  error_code: string | null;
+  result_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HistoryStop {
+  sequence: number;
+  patient_id: string;
+  external_ref: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+export interface HistoryRoute {
+  route_id: string;
+  revision_id: string;
+  revision: number;
+  published_at: string;
+  service_date: string;
+  zone_id: string;
+  assignee_id: string;
+  objective: string | null;
+  stops: HistoryStop[];
+}
+
+export interface HistoryRoutesPage {
+  items: HistoryRoute[];
+  next_cursor: string | null;
+}
+
+export type SharePermission = "view" | "edit";
+export type ShareKind = "internal" | "external";
+
+export interface ShareGrant {
+  id: string;
+  route_id: string;
+  subject_user_id: string | null;
+  permission: SharePermission | string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_by: string;
+  last_accessed_at: string | null;
+  kind: ShareKind;
+  token?: string | null;
+}
+
+export interface ShareGrantList {
+  grants: ShareGrant[];
+}
+
+export interface PublicShareView {
+  route_id: string;
+  service_date: string;
+  stop_count: number;
+  stops: Array<{ sequence: number }>;
+  permission: string;
+  expires_at: string | null;
+}

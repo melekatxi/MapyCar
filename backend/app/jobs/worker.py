@@ -18,7 +18,9 @@ from app.modules.geocoding import service as geocoding_service
 from app.modules.geocoding.deps import get_geocode_cache, get_geocoder
 from app.modules.imports import service as imports_service
 from app.modules.imports.deps import get_field_cipher, get_object_store
+from app.modules.notifications import service as notifications_service
 from app.modules.planning import service as planning_service
+from app.modules.routing import export as routing_export
 from app.modules.routing import service as routing_service
 from app.modules.routing.deps import get_optimizer
 from app.modules.routing.matrix import get_osrm_table_cache
@@ -102,12 +104,42 @@ def _handle_optimize_route(payload: dict) -> None:
         db.close()
 
 
+def _handle_export_route(payload: dict) -> None:
+    db = SessionLocal()
+    try:
+        routing_export.export_route_job(
+            db,
+            get_object_store(),
+            route_id=uuid.UUID(payload["route_id"]),
+            organization_id=uuid.UUID(payload["organization_id"]),
+            revision_id=uuid.UUID(payload["revision_id"]),
+            format=payload["format"],
+            job_id=uuid.UUID(payload["job_id"]),
+        )
+    finally:
+        db.close()
+
+
+def _handle_notifications(payload: dict) -> None:
+    db = SessionLocal()
+    try:
+        notifications_service.consume_outbox_event(
+            db,
+            event_id=uuid.UUID(payload["event_id"]),
+            organization_id=uuid.UUID(payload["organization_id"]),
+        )
+    finally:
+        db.close()
+
+
 HANDLERS: dict[str, Callable[[dict], None]] = {
     "imports": _handle_validate_import,
     "geocoding": _handle_geocode_batch,
     "zoning": _handle_zone_proposal,
     "planning": _handle_generate_plan,
     "optimization": _handle_optimize_route,
+    "exports": _handle_export_route,
+    "notifications": _handle_notifications,
 }
 
 

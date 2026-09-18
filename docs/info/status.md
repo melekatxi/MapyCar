@@ -8,9 +8,9 @@
 
 | Campo | Valor |
 |---|---|
-| Última actualización | 2026-08-30 |
-| Fase actual | Fase 3 **iniciada (12/20)**. Fase 2 19/19. Fase 1 código 27/28; único pendiente 1.FE.8 (humanos) |
-| Siguiente | **3.BE.11** publish snapshot, **3.BE.9** recalc, **3.FE.1** UI. **No** production-ready: ClamAV, DoD PR, usabilidad. No arrancar Fase 5 como camino principal. |
+| Última actualización | 2026-09-18 |
+| Fase actual | Fase 4 **iniciada (11/20)**. Fase 3 20/20. Fase 2 19/19. Fase 1 código 27/28; único pendiente 1.FE.8 (humanos) |
+| Siguiente | **4.BE.10** GET/PATCH notificaciones. **No** production-ready: ClamAV, DoD PR, usabilidad. No arrancar Fase 5 como camino principal. |
 
 ## 1. Resumen ejecutivo
 
@@ -49,7 +49,7 @@
   E2E HTTP [`test_fase2_e2e.py`](../../backend/tests/test_fase2_e2e.py)
   200 pacientes, proposal→override→plan generate→move→publish (**1
   passed** ~8 s; pytest, no Playwright). **Caveats visibles:** publish
-  200 vs diseño 202; tabla outbox adelantada vs consumidor 4.BE.9;
+  200 vs diseño 202; outbox en 2.BE.13, consumidor **4.BE.9 `[x]`**;
   assignee por defecto = planner salvo `body.assignees`; `GET /patients`
   **no** filtra field-only ni setea `visit_status` planned/completed
   (criterio 403/404 de 2.BE.14 sí). **1.FE.8** sigue humana. **No**
@@ -58,7 +58,7 @@
   [§3.12](#312-tabla-zone_proposals-no-está-en-diseño-61),
   [§3.13](#313-cohesión-osrm-no-está-en-el-worker-de-propuestas)
   (resuelto) y [§3.14](#314-publicar-plan-200-vs-202-outbox-adelantado).
-- **Fase 3 (Optimización de rutas): 12/20, iniciada 2026-08-30.** Esquema
+- **Fase 3 (Optimización de rutas): 20/20, cerrada 2026-09-11.** Esquema
   `route_revisions`/`route_stops`/`route_metrics` (Alembic `c91d0e47f3b2`;
   UNIQUE `(route_id, revision)` y `(revision_id, sequence)`; FK
   `daily_routes.current_revision`; RLS) y ledger `jobs` (Alembic
@@ -74,14 +74,45 @@
   (ahorro; 409 `METRICS_STALE`); `PATCH /routes/{id}/stops/order`
   (`If-Match` sobre `daily_routes.version`, métricas stale);
   `GET /routes/{id}` con diagnósticos y acciones sugeridas (códigos
-  `INCOMPATIBLE_WINDOWS`, `ISOLATED_STOP`). Benchmark TSP p95
-  **0.0266 s** en i7-12700H ([`tsp-benchmark.md`](../../scripts/qa/tsp-benchmark.md)).
-  pytest **299** incluyendo optimize e2e. **Pendientes (8):** 3.BE.9,
-  3.BE.11, 3.BE.13, 3.FE.1–4, 3.QA.2. **Siguiente código:** **3.BE.11**
-  (publish snapshot). **1.FE.8** sigue humana.
-- **Fases 4–5 y transversales: no iniciadas.** T.CI.1/T.CI.2 son distintas de 0.CI.1/0.CI.2
-  (estas últimas son Fase 0 y ya están hechas). 4.BE.5 (`share_grants`)
-  queda desbloqueada por 3.BE.1.
+  `INCOMPATIBLE_WINDOWS`, `ISOLATED_STOP`). **3.BE.11 `[x]` 2026-09-11:**
+  `POST /routes/{id}/publish` **200** (snapshot inmutable: dirección
+  cifrada, orden, métricas, geometría OSRM, versiones OSRM/OSM);
+  reordenar la publicada → 409; optimize posterior crea revisión
+  `draft`. Benchmark TSP p95 **0.0266 s** en i7-12700H
+  ([`tsp-benchmark.md`](../../scripts/qa/tsp-benchmark.md)).
+  **3.BE.9 `[x]` 2026-09-11:** `PUT /routes/{id}/stops` (añadir/quitar/
+  refrescar direcciones; published abre `draft`); optimize incluye
+  `stops_fingerprint` (misma clave tras el cambio → 409; clave nueva →
+  202). **3.FE.1 `[x]` 2026-09-11:** UI `/optimizacion` lanza
+  `POST /routes/{id}/optimize` y hace polling de `GET /jobs/{id}` hasta
+  completar (Vitest, no Playwright). **3.FE.2 `[x]` 2026-09-11:**
+  `RouteDiagnostics` en inviabilidad (explicación + acciones; no relaja
+  solas). **3.FE.3 `[x]` 2026-09-11:** comparativa original/optimizada
+  (tabla de ahorro + mapa numerado). **3.BE.13 `[x]` 2026-09-11:**
+  `POST /routes/{id}/exports` 202 (pdf/png/navigation_link); enlace solo
+  coords. **3.FE.4 `[x]` 2026-09-11:** UI exporta PDF/PNG y copia enlace
+  (diálogo de riesgo Google Maps). **3.QA.2 `[x]` 2026-09-11:**
+  [`test_routing_fase3_e2e.py`](../../backend/tests/test_routing_fase3_e2e.py)
+  recalc → publish → export. **Pendientes (0).** **4.BE.1 `[x]`:**
+  `GET /history/routes` sobre snapshots. **4.BE.2 `[x]` 2026-09-18:**
+  `PATCH /routes/{id}/stops/{stopId}` ejecución (`If-Match` =
+  `route_stops.version`; 409 con estado más reciente). **4.BE.3 `[x]`
+  2026-09-18:** `route_metrics.variant=actual` al reportar; `GET
+  /comparison` devuelve `actual`/`deviation`/`execution_counts` (sin GPS).
+  **4.FE.1 `[x]` 2026-09-18:** UI `/historico` (filtros + snapshot + plan vs.
+  ejecución). **4.FE.5 `[x]` 2026-09-18:** UI `/campo` (reporte + reconexión,
+  sin teselas offline). **4.BE.5 `[x]` 2026-09-18:** `share_grants` CHECK
+  sujeto XOR token + RLS. **4.BE.6 `[x]` 2026-09-18:** `POST/GET
+  /routes/{id}/shares` interno; view no edita. **4.BE.7 `[x]` 2026-09-18:**
+  token externo + `POST /public-shares/exchange` (410 vencido/revocado; vista
+  minimizada). **4.BE.8 `[x]` 2026-09-18:** `DELETE /shares/{id}` invalida
+  acceso al instante (403 interno / 410 exchange). **4.FE.2 `[x]`
+  2026-09-18:** UI `/compartir` (interno/externo, preview, revocar).
+  **4.BE.9 `[x]` 2026-09-18:** consumidor outbox idempotente (`event_id`);
+  `notifications` + eventos share/reasignar. **Siguiente código:**
+  **4.BE.10**. **1.FE.8** sigue humana.
+- **Fase 4 iniciada (11/20).** Fase 5 y transversales: no como camino principal.
+  T.CI.1/T.CI.2 son distintas de 0.CI.1/0.CI.2 (Fase 0, hechas).
 - **RF-05 cerrado** — ver [sección 3.1](#31-tasa-de-matching-de-geocodificación-por-debajo-del-objetivo)
   (resuelto 2026-08-30) y [sección 3.10](#310-ground-truth-0qa2-contiene-portales-que-no-existen-en-el-callejero-oficial).
 
@@ -91,16 +122,16 @@
 |---|---|---|---|---|
 | 0 — Preparación | 16 | 16 | 0 | Cerrada y aprobada (incluye aprobación manual de 0.QA.1/0.QA.2). 0.CI.1/0.CI.2 viven aquí, no en Transversal. |
 | 1 — MVP importación/geocodificación/mapa | 28 | 27 | 1 | Pendiente: 1.FE.8 (humanos). Cerradas 2026-08-30: 1.DATA.3, 1.QA.1, 1.QA.2, 1.DATA.4, 1.FE.5, 1.FE.6. |
-| 2 — Zonificación y planificación | 19 | 19 | 0 | **Hecha 2026-08-30 a nivel de WBS.** 2.BE.1–2.BE.14, 2.FE.1–2.FE.3, 2.QA.1, 2.QA.2. Pendientes: ninguna. Caveats: publish 200 vs 202; outbox adelantado vs 4.BE.9; mapa field/`visit_status` real no; sin Playwright. |
-| 3 — Optimización de rutas | 20 | 12 | 8 | **Iniciada 2026-08-30 (12/20).** Hechas: 3.BE.1–3.BE.8, 3.BE.10, 3.BE.12, 3.BE.14, 3.QA.1. Pendientes: 3.BE.9, 3.BE.11, 3.BE.13, 3.FE.1–4, 3.QA.2. **Siguiente código:** 3.BE.11. |
-| 4 — Histórico y colaboración | 20 | 0 | 20 | No iniciada. 2.BE.13 `[x]` adelantó `outbox_events`; el consumidor sigue en 4.BE.9 (tras 4.BE.6). 4.BE.5 desbloqueada por 3.BE.1. |
+| 2 — Zonificación y planificación | 19 | 19 | 0 | **Hecha 2026-08-30 a nivel de WBS.** 2.BE.1–2.BE.14, 2.FE.1–2.FE.3, 2.QA.1, 2.QA.2. Pendientes: ninguna. Caveats: publish 200 vs 202; consumidor outbox **4.BE.9 `[x]`**; mapa field/`visit_status` real no; sin Playwright. |
+| 3 — Optimización de rutas | 20 | 20 | 0 | **Cerrada 2026-09-11 (20/20).** Hechas las 20. |
+| 4 — Histórico y colaboración | 20 | 11 | 9 | **Iniciada 2026-09-11 (11/20).** Hechas: 4.BE.1–3, 4.BE.5–9, 4.FE.1–2, 4.FE.5. Pendientes: 4.BE.4, 4.BE.10–13, 4.FE.3–4, 4.QA.1–2. **Siguiente código:** 4.BE.10. |
 | 5 — Pruebas, seguridad y despliegue | 19 | 0 | 19 | No iniciada. Añadida 5.SEC.7 (ClamAV) el 2026-08-30. |
 | Transversal (observabilidad, CI/CD, docs, RGPD) | 12 | 0 | 12 | **0/12, no 2/12.** 0.CI.1/0.CI.2 son Fase 0; T.CI.1/T.CI.2 (CD a staging y gate de cobertura) siguen abiertas. |
-| **Total** | **134** | **74** | **60** | 16+27+19+12=74 hechas. +12 Fase 3 el 2026-08-30. El recuento previo (62 hechas / **73** pendientes) estaba off-by-one (62+73=135); el correcto era 72 pendientes (134−62). 72−12=**60**. |
+| **Total** | **134** | **93** | **41** | 16+27+19+20+11=93 hechas. +1 (4.BE.9) el 2026-09-18. 42−1=**41**. |
 
 Detalle tarea a tarea con criterios de aceptación y evidencia: ver
 [`docs/tareas/tareas-app-rutas-pacientes.md`](../tareas/tareas-app-rutas-pacientes.md).
-Índice operativo de las 60 pendientes (qué está desbloqueado ya): [sección 6](#6-tareas-pendientes-índice-operativo).
+Índice operativo de las 41 pendientes (qué está desbloqueado ya): [sección 6](#6-tareas-pendientes-índice-operativo).
 
 ## 3. Deuda técnica y decisiones pendientes (registro vivo)
 
@@ -331,24 +362,40 @@ Detalle tarea a tarea con criterios de aceptación y evidencia: ver
 
 ### 3.14 Publicar plan: 200 vs 202, outbox adelantado
 
-- **Estado**: 🟡 Nota de consistencia — 2.BE.13 `[x]`. **No** es un hueco del
-  WBS de Fase 2.
+- **Estado**: 🟡 Nota de consistencia (200 vs 202) — 2.BE.13 `[x]`. Consumidor
+  outbox **4.BE.9 `[x]`**. **No** es un hueco del WBS de Fase 2.
 - **Detectado**: 2026-08-30, al cerrar 2.BE.13.
 - **200 vs 202**: `POST /api/v1/plans/{id}/publish` responde **200**. Diseño
   §8.4 / cola async sugería **202**. Una sola transacción confirma
   `monthly_plans.status=published` + filas `daily_routes` + `outbox_events`.
   Un 202 dejaría un worker que puede fallar después de marcar published.
   Tests: [`test_plan_publish_e2e.py`](../../backend/tests/test_plan_publish_e2e.py).
-- **Outbox adelantado vs 4.BE.9**: Alembic `e4c8a2b91d07` crea
-  `outbox_events` ahora (evento `plan.published`, `processed_at` nulo). El
-  consumidor idempotente sigue en **4.BE.9** (depende de 4.BE.6). No
-  duplicar la tabla.
+- **Outbox adelantado vs 4.BE.9**: Alembic `e4c8a2b91d07` creó
+  `outbox_events` en 2.BE.13. **4.BE.9 `[x]` 2026-09-18** añadió
+  `notifications` (Alembic `c4f1d82e90a3`) y el consumidor idempotente
+  (`event_id`); no se duplicó la tabla.
 - **Assignee por defecto**: `plan.created_by` (planner) salvo
   `body.assignees`. Rutas nacen `draft`. **3.BE.1 `[x]`** creó
   `route_revisions`/`route_stops`/`route_metrics`; publish de plan **no**
-  crea revisión (eso es 3.BE.11).
+  crea revisión (optimize sí; 3.BE.11 `[x]` congela el snapshot).
 - **Acción**: incorporar el 200 y `outbox_events` a diseño §6.1/§8.4 en la
   próxima revisión. No crear tarea WBS.
+
+### 3.15 Publicar ruta: 200 vs 202
+
+- **Estado**: 🟡 Nota de consistencia — 3.BE.11 `[x]`. **No** es un hueco del
+  WBS de Fase 3.
+- **Detectado**: 2026-09-11, al cerrar 3.BE.11.
+- **200 vs 202**: `POST /api/v1/routes/{id}/publish` responde **200**. Diseño
+  §8.5 no fija el código; §8.1 reserva 202 para trabajos largos. Publicar
+  es sincrónico: snapshot cifrado + geometría OSRM + freeze de revisión
+  en una transacción (ledger `route.publish`). Un 202 dejaría un worker
+  que puede fallar después de marcar `published`. Mismo criterio que
+  2.BE.13 / [§3.14](#314-publicar-plan-200-vs-202-outbox-adelantado).
+- **Geometría**: se guarda en `route_revisions.constraints_json.snapshot`
+  (GeoJSON LineString). No hay columna dedicada (diseño 6.1 no la tiene).
+- **Acción**: incorporar el 200 a diseño §8.5 en la próxima revisión. No
+  crear tarea WBS.
 
 ## 4. Infraestructura activa (estado real de la máquina de desarrollo)
 
@@ -388,29 +435,24 @@ decisión aplazada):
 
 ## 6. Tareas pendientes (índice operativo)
 
-Índice de las **60** `[ ]` del WBS a 2026-08-30. No sustituye criterios ni evidencia:
+Índice de las **41** `[ ]` del WBS a 2026-09-18. No sustituye criterios ni evidencia:
 eso vive en [`tareas-app-rutas-pacientes.md`](../tareas/tareas-app-rutas-pacientes.md)
 (§2.1 es el gemelo corto). Recuento por fase: [sección 2](#2-estado-por-fase).
 
-**Siguiente corte de producto:** **3.BE.11** (publish snapshot) / **3.BE.9**
-(recalc) / **3.FE.1** (UI). **1.FE.8** sigue humana. Fase 3 **12/20**,
-iniciada. Fase 2 **19/19**. Cohesión OSRM **sí** cableada (2.BE.7). Ledger
-Idempotency-Key **cerrado** (3.BE.14). **No** production-ready: ClamAV,
-DoD PR, usabilidad.
+**Siguiente corte de producto:** **4.BE.10** (`GET`/`PATCH` notificaciones). **1.FE.8**
+sigue humana. Fase 3 **20/20**. Fase 4 **11/20**. **No** production-ready:
+ClamAV, DoD PR, usabilidad.
 **No** usar Fase 5 como camino principal. DoD de proceso (PR): [§3.9](#39-dod-general-no-cumplido-en-el-árbol-de-trabajo-actual) — no es una tarea WBS.
 
 ### 6.1 Ahora / desbloqueado
 
-Tareas cuya `Depende de:` está toda `[x]` (o no tiene deps de tarea). Verificado contra el WBS el 2026-08-30.
+Tareas cuya `Depende de:` está toda `[x]` (o no tiene deps de tarea). Verificado contra el WBS el 2026-09-18.
 
 | ID | Una línea | Tipo | Por qué ahora |
 |---|---|---|---|
 | 1.FE.8 | Usabilidad del asistente y el mapa con usuarios reales | humano | 1.FE.1 y 1.FE.4 `[x]`. Protocolo listo; **no** es el informe. **Siguiente humana.** |
-| 3.BE.11 | `POST /routes/{id}/publish` (snapshot inmutable) | código | 3.BE.7 `[x]`. **Siguiente código de producto.** Desbloquea 3.BE.13 / 3.FE.3 / 4.BE.1–2. |
-| 3.BE.9 | Recalcular ruta al añadir/quitar/modificar paradas | código | 3.BE.7 `[x]`. Nueva clave de idempotencia por cambio. |
-| 3.FE.1 | UI del optimizador (objetivo, origen, progreso) | código | 3.BE.7 `[x]`. |
-| 3.FE.2 | Vista de diagnóstico e inviabilidad | código | 3.BE.12 `[x]`. |
-| 4.BE.5 | Migración `share_grants` (CHECK sujeto XOR token) | código | 3.BE.1 `[x]`. Paralelo; no es el corte. |
+| 4.BE.10 | `GET`/`PATCH` notificaciones in-app | código | 4.BE.9 `[x]`. **Siguiente código de producto.** |
+| 4.BE.4 | Job de retención/purga + acta | código | 4.BE.1 y 0.DATA.4 `[x]`. Paralelo; no es el corte. |
 | 5.SEC.7 | ClamAV en `POST /imports` | código | Deuda de 1.BE.1; 1.BE.1 `[x]`. Paralelo; no es el corte. |
 | T.RGPD.1 | RAT y EIPD (asesoría jurídica) | jurídico | Sin deps de tarea. |
 | T.CI.1 | CD a staging tras merge (migraciones + smoke) | código | 0.CI.1 `[x]`. Distinta de 0.CI.1/0.CI.2 (Fase 0, hechas). |
@@ -459,19 +501,17 @@ Cohesión OSRM **sí** cableada en `run_zone_proposal` (2.BE.7): clustering → 
 | 2.BE.11 | Endpoints de planes (crear/generar/validar) | `[x]` Tras 2.BE.10 |
 | 2.BE.12 | Mover visita (`If-Match`) | `[x]` Tras 2.BE.11. Dry-run / confirm / `If-Match`. |
 | 2.FE.2 | Calendario UI (drag + formulario) | `[x]` Tras 2.BE.12. Vitest; sin UI de publicar; sin Playwright. ∥ 2.BE.13 |
-| 2.BE.13 | Publicar plan → `daily_routes` + outbox | `[x]` Tras 2.BE.12. HTTP **200** (no 202). Outbox adelantado vs 4.BE.9. |
+| 2.BE.13 | Publicar plan → `daily_routes` + outbox | `[x]` Tras 2.BE.12. HTTP **200** (no 202). Consumidor **4.BE.9 `[x]`**. |
 | 2.BE.14 | Asignar visitador de campo | `[x]` Tras 2.BE.13. Otra org → 404. Mapa field/`visit_status` **no**. |
 | 2.QA.1 | E2E zonas → ajustar → plan → publicar | `[x]` Cierre HTTP pytest; 200 pacientes; sin Playwright. |
 
-### 6.2.1 Fase 3 (12/20) — iniciada
+### 6.2.1 Fase 3 (20/20) — hecha
 
 Detalle y criterios: [WBS §7](../tareas/tareas-app-rutas-pacientes.md#7-fase-3--optimización-de-rutas). 🔀 = marcada paralelizable en el WBS.
 
-**Hechas (12):** 3.BE.1, 3.BE.14, 3.BE.2, 3.BE.3, 3.BE.4, 3.BE.5, 3.BE.6, 3.BE.7, 3.BE.8, 3.BE.10, 3.BE.12, 3.QA.1.
+**Hechas (20):** 3.BE.1–3.BE.14, 3.FE.1–3.FE.4, 3.QA.1, 3.QA.2.
 
-Cadena: 3.BE.1 `[x]` → 3.BE.2 `[x]` → (3.BE.3 `[x]` → 3.BE.4 `[x]` ∥ 3.BE.5 `[x]` ∥ 3.QA.1 `[x]` ; 3.BE.6 `[x]`) → 3.BE.7 `[x]` (ledger 3.BE.14 `[x]`). 3.BE.8 `[x]` tras 3.BE.6. 3.BE.10 `[x]` tras 3.BE.1. 3.BE.12 `[x]` tras 3.BE.4.
-
-**Pendientes (8):** 3.BE.9, 3.BE.11, 3.FE.1 (deps 3.BE.7 — **en 6.1**); 3.FE.2 (deps 3.BE.12 — **en 6.1**); 3.BE.13 (espera 3.BE.11); 3.FE.3 (espera 3.BE.11); 3.FE.4 (espera 3.BE.13); 3.QA.2 (espera 3.BE.9 + 3.BE.11 + 3.BE.13).
+**Pendientes (0).** Cierre: 3.QA.2 `[x]` 2026-09-11.
 
 ### 6.3 Resto por fase (recuento + ids)
 
@@ -479,8 +519,8 @@ Sin pegar criterios. Encabezados del WBS:
 
 | Fase | Pendientes | Ids | WBS |
 |---|---|---|---|
-| 3 — Optimización | **12/20** hechas (**8** ids) | Pendientes: 3.BE.9, 3.BE.11, 3.BE.13, 3.FE.1–3.FE.4, 3.QA.2. **3.BE.9**, **3.BE.11**, **3.FE.1**, **3.FE.2** también en [6.1](#61-ahora--desbloqueado). Hechas: 3.BE.1–3.BE.8, 3.BE.10, 3.BE.12, 3.BE.14, 3.QA.1. | [§7](../tareas/tareas-app-rutas-pacientes.md#7-fase-3--optimización-de-rutas) |
-| 4 — Histórico y colaboración | 0/20 hechas (**20** ids) | 4.BE.1–4.BE.13, 4.FE.1–4.FE.5, 4.QA.1, 4.QA.2. **4.BE.11** y **4.BE.5** también en 6.1. El resto espera 3.BE.11 / 4.BE.6. 2.BE.13 `[x]` adelantó `outbox_events`; el consumidor sigue en 4.BE.9. | [§8](../tareas/tareas-app-rutas-pacientes.md#8-fase-4--histórico-y-colaboración) |
+| 3 — Optimización | **20/20** hechas (**0** ids) | Fase cerrada. Hechas: 3.BE.1–3.BE.14, 3.FE.1–3.FE.4, 3.QA.1, 3.QA.2. | [§7](../tareas/tareas-app-rutas-pacientes.md#7-fase-3--optimización-de-rutas) |
+| 4 — Histórico y colaboración | **11/20** hechas (**9** ids) | Hechas: 4.BE.1–4.BE.3, 4.BE.5–4.BE.9, 4.FE.1, 4.FE.2, 4.FE.5. Pendientes: 4.BE.4, 4.BE.10–4.BE.13, 4.FE.3–4.FE.4, 4.QA.1, 4.QA.2. **4.BE.10**, **4.BE.4** y **4.BE.11** también en 6.1. | [§8](../tareas/tareas-app-rutas-pacientes.md#8-fase-4--histórico-y-colaboración) |
 | 5 — Seguridad y despliegue | 0/19; **7** en 6.1, **12** aquí | 5.SEC.1, 5.SEC.2, 5.SEC.4 (anclada a diseño 4.1), 5.DATA.2, 5.DATA.4, 5.DATA.5, 5.QA.2, 5.QA.3, 5.DEPLOY.1, 5.DEPLOY.2, 5.DEPLOY.3, 5.DEPLOY.4. 5.SEC.1 y 5.QA.2 piden fases 1–4 completas. | [§9](../tareas/tareas-app-rutas-pacientes.md#9-fase-5--pruebas-seguridad-y-despliegue) |
 | Transversal | 0/12; **7** en 6.1, **5** aquí | T.OBS.3 (tras T.OBS.1), T.DOC.3 (fases 1–4 por rol), T.RGPD.2, T.RGPD.3, T.RGPD.4 (tras T.RGPD.1; 3 y 4 también 4.BE.4 / 5.SEC.6). | [§10](../tareas/tareas-app-rutas-pacientes.md#10-tareas-transversales) |
 
